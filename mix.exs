@@ -7,6 +7,7 @@ defmodule Portico.MixProject do
       version: "0.1.0",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
+      test_coverage: [summary: [threshold: 91]],
       deps: deps()
     ]
   end

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install library dependencies
+        run: mix deps.get --check-locked
+      - name: Check library formatting
+        run: mix format --check-formatted
+      - name: Test library and enforce coverage
+        run: mix test --warnings-as-errors --cover
+      - name: Install example dependencies
+        working-directory: example
+        run: mix deps.get --check-locked
+      - name: Check example formatting
+        working-directory: example
+        run: mix format --check-formatted
+      - name: Test example
+        working-directory: example
+        run: mix test --warnings-as-errors
+      - name: Install Python MCP client
+        working-directory: example
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r e2e/requirements.txt
+      - name: Test MCP over HTTP
+        working-directory: example
+        run: .venv/bin/python -m unittest discover -s e2e -v

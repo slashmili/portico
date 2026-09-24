@@ -30,3 +30,8 @@ mix deps.get
 mix test --warnings-as-errors --cover
 mix format --check-formatted
 ```
+
+GitHub Actions runs these checks on pushes and pull requests, plus the example's
+Elixir and Python MCP E2E suites. Library coverage must be at least **91%**, keeping
+it above the 90% target. Local asdf installs and CI share the Elixir/Erlang versions in
+[.tool-versions](.tool-versions). CI uses Python 3.14. See [the workflow](.github/workflows/ci.yml).
