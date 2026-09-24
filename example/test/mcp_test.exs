@@ -14,10 +14,14 @@ defmodule PorticoExample.MCPTest do
   end
 
   test "invalid inputs return a schema validation tool error", %{mcp: mcp} do
-    for arguments <- [%{}, %{"a" => "2", "b" => 3}, %{"a" => 2, "b" => 3, "extra" => true}] do
+    for {arguments, detail} <- [
+          {%{}, ~s("/a": is required; "/b": is required)},
+          {%{"a" => "2", "b" => 3}, ~s("/a": expected integer)},
+          {%{"a" => 2, "b" => 3, "extra" => true}, ~s("/extra": is not allowed)}
+        ] do
       result = call_tool mcp, "add", arguments
       assert result.is_error
-      assert_text result, "Tool arguments do not match the input schema."
+      assert_text result, "Tool arguments do not match the input schema. " <> detail
     end
   end
 end

@@ -130,8 +130,17 @@ context but is not returned. `:ok` means the callback produced a result;
 ```
 
 After restarting the example, call `add` with `{"a": "2", "b": 3}` to see a
-schema error: "Tool arguments do not match the input schema." The callback will
-not run. The response is HTTP 200 with a completed result and `isError: true`; the Python
+schema error:
+
+```text
+Tool arguments do not match the input schema. "/a": expected integer
+```
+
+Missing arguments report `"/a": is required; "/b": is required`. Paths use
+JSON-quoted JSON Pointers: nested array fields look like `"/items/0/name"`, and
+`""` identifies the root. Messages omit submitted values. Other constraints
+identify their schema keyword, for example `does not satisfy minimum`.
+The callback will not run. The response is HTTP 200 with a completed result and `isError: true`; the Python
 client exposes this as `result.is_error`. Unknown tools and malformed protocol
 requests still return JSON-RPC errors. Unexpected callback exceptions remain
 sanitized internal errors. Local tests can use `assert result.is_error` alongside

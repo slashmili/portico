@@ -113,9 +113,13 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
-                for arguments in [
-                    {}, {"a": "2", "b": 3}, {"a": 2, "b": 3, "extra": True},
-                    {"a": 2.5, "b": 3}, {"a": True, "b": 3}, {"a": None, "b": 3},
+                for arguments, detail in [
+                    ({}, '"/a": is required; "/b": is required'),
+                    ({"a": "private-value", "b": 3}, '"/a": expected integer'),
+                    ({"a": 2, "b": 3, "extra": True}, '"/extra": is not allowed'),
+                    ({"a": 2.5, "b": 3}, '"/a": expected integer'),
+                    ({"a": True, "b": 3}, '"/a": expected integer'),
+                    ({"a": None, "b": 3}, '"/a": expected integer'),
                 ]:
                     with self.subTest(arguments=arguments):
                         result = await client.call_tool("add", arguments)
@@ -123,7 +127,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(len(result.content), 1)
                         self.assertTrue(all(isinstance(item, TextContent) for item in result.content))
                         self.assertEqual([item.text for item in result.content], [
-                            "Tool arguments do not match the input schema.",
+                            "Tool arguments do not match the input schema. " + detail,
                         ])
 
 

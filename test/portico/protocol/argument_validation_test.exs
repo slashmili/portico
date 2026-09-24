@@ -65,7 +65,9 @@ defmodule Portico.Protocol.ArgumentValidationTest do
   test "test helpers return a tool error and never invoke callbacks for invalid inputs" do
     for arguments <- @invalid do
       result = call_tool Server, "checked", arguments, assigns: %{observer: self()}
-      assert result == Result.error(@failure)
+      assert result.is_error
+      assert [%{type: "text", text: text}] = result.content
+      assert String.starts_with?(text, @failure)
       refute_received {:invoked, _}
     end
   end
@@ -79,7 +81,8 @@ defmodule Portico.Protocol.ArgumentValidationTest do
       assert response["id"] == 7
       assert response["result"]["resultType"] == "complete"
       assert response["result"]["isError"] == true
-      assert response["result"]["content"] == [%{"type" => "text", "text" => @failure}]
+      assert [%{"type" => "text", "text" => text}] = response["result"]["content"]
+      assert String.starts_with?(text, @failure)
       refute JSON.encode!(response) =~ "private-value"
       refute_received {:invoked, _}
     end

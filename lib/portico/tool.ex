@@ -38,8 +38,10 @@ defmodule Portico.Tool do
   the callback's return shape. Protocol calls also validate envelopes and core
   metadata and encode completed text results. `Portico.Plug` serves HTTP requests;
   arguments are checked against the compiled schema before the callback runs.
-  Invalid arguments return a completed tool error with a fixed message; the
-  callback is skipped. Valid arguments are passed unchanged, without coercion
+  Invalid arguments return a completed tool error with field paths and reasons;
+  the callback is skipped. Paths are JSON-quoted JSON Pointers (`""` means the
+  root), and submitted values are not included. Missing fields and type errors
+  have specific messages; other constraints identify the failed schema keyword. Valid arguments are passed unchanged, without coercion
   or insertion of schema defaults. JSON Schema integers include values such
   as `2.0`, so callbacks should account for both Elixir numeric representations.
 

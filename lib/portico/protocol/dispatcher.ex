@@ -186,18 +186,20 @@ defmodule Portico.Protocol.Dispatcher do
         {:error, :unknown_tool}
 
       %{module: module} ->
-        if Schema.valid?(module.__portico_validator__(), arguments) do
-          case module.call(arguments, request) do
-            {:ok, %Result{}} = reply ->
-              reply
+        case Schema.validate(module.__portico_validator__(), arguments) do
+          :ok ->
+            case module.call(arguments, request) do
+              {:ok, %Result{}} = reply ->
+                reply
 
-            _other ->
-              raise ArgumentError,
-                    "invalid return from #{inspect(module)}.call/2; " <>
-                      "expected {:ok, %Portico.Result{}}"
-          end
-        else
-          {:ok, Result.error("Tool arguments do not match the input schema.")}
+              _other ->
+                raise ArgumentError,
+                      "invalid return from #{inspect(module)}.call/2; " <>
+                        "expected {:ok, %Portico.Result{}}"
+            end
+
+          {:error, message} ->
+            {:ok, Result.error(message)}
         end
     end
   end

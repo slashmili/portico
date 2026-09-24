@@ -54,6 +54,60 @@ defmodule Portico.Schema do
     match?({:ok, _}, JSV.validate(data, validator, cast: false))
   end
 
+  # Return only Portico-owned text. Validator messages can include input values.
+  def validate(validator, data) do
+    case JSV.validate(data, validator, cast: false) do
+      {:ok, _} ->
+        :ok
+
+      {:error, error} ->
+        details =
+          error.errors
+          |> Enum.flat_map(&diagnostics/1)
+          |> Enum.uniq()
+          |> Enum.sort()
+          |> Enum.join("; ")
+
+        {:error, "Tool arguments do not match the input schema. " <> details}
+    end
+  end
+
+  # Container errors accompany the more specific errors at their child paths.
+  defp diagnostics(%{kind: kind})
+       when kind in [:properties, :patternProperties, :additionalProperties, :items, :prefixItems],
+       do: []
+
+  defp diagnostics(%{kind: :required, args: args, data_path: path}) do
+    Enum.map(args[:required], &diagnostic([&1 | path], "is required"))
+  end
+
+  defp diagnostics(%{kind: :type, args: args, data_path: path}) do
+    types = args[:type] |> List.wrap() |> Enum.map_join(" or ", &to_string/1)
+    [diagnostic(path, "expected " <> types)]
+  end
+
+  defp diagnostics(%{kind: :boolean_schema, data_path: path}),
+    do: [diagnostic(path, "is not allowed")]
+
+  defp diagnostics(%{kind: kind, data_path: path}) do
+    # Keep compositions as a single constraint: alternative branches are not
+    # individually required. Never expose validator-specific error messages.
+    keyword = if kind == :jsv@if, do: "conditional", else: to_string(kind)
+    [diagnostic(path, "does not satisfy " <> keyword)]
+  end
+
+  defp diagnostic(path, reason) do
+    pointer =
+      path
+      |> Enum.reverse()
+      |> Enum.map_join("", fn segment ->
+        "/" <> (segment |> to_string() |> String.replace("~", "~0") |> String.replace("/", "~1"))
+      end)
+
+    # JSON quoting also escapes control characters in property names.
+    JSON.encode!(pointer) <> ": " <> reason
+  end
+
   defp normalize(value) when is_map(value) and not is_struct(value) do
     Enum.reduce(value, %{}, fn {key, value}, result ->
       key = normalize_key(key)
