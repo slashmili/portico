@@ -1,10 +1,10 @@
 defmodule Portico.Protocol.Error do
   @moduledoc false
 
-  @type reason :: :invalid_request | :invalid_params
+  @type reason :: :invalid_request | :invalid_params | :method_not_found
 
   @doc """
-  Builds a JSON-ready error response for a validation failure.
+  Builds a JSON-ready error response for a validation or method lookup failure.
 
   A known ID is preserved. `nil` means the ID could not be determined and is
   omitted from the response, as required by the targeted MCP revision. Invalid
@@ -15,7 +15,8 @@ defmodule Portico.Protocol.Error do
   belong to the dispatcher and transport, respectively.
   """
   @spec response(reason(), String.t() | integer() | nil) :: map()
-  def response(reason, id \\ nil) when reason in [:invalid_request, :invalid_params] do
+  def response(reason, id \\ nil)
+      when reason in [:invalid_request, :invalid_params, :method_not_found] do
     response = %{"jsonrpc" => "2.0", "error" => details(reason)}
 
     cond do
@@ -32,4 +33,5 @@ defmodule Portico.Protocol.Error do
 
   defp details(:invalid_request), do: %{"code" => -32600, "message" => "Invalid request"}
   defp details(:invalid_params), do: %{"code" => -32602, "message" => "Invalid params"}
+  defp details(:method_not_found), do: %{"code" => -32601, "message" => "Method not found"}
 end
