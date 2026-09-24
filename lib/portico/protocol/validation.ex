@@ -36,6 +36,42 @@ defmodule Portico.Protocol.Validation do
 
   def envelope(_message), do: {:error, :invalid_request}
 
+  @doc """
+  Checks the core metadata fields in decoded request params.
+
+  Requires a string protocol version and a client-capabilities object. Client
+  information is optional; when supplied, it must contain string name and
+  version fields. Returns the metadata unchanged, including extension fields.
+
+  This is structural validation only. Supported-version checks, capability
+  payloads, optional metadata fields, and metadata key naming rules are separate
+  checks. Client information is self-reported and does not establish identity.
+  This function applies to requests, not notifications. Errors will map to
+  JSON-RPC Invalid params (-32602) when error encoding is implemented.
+  """
+  @spec request_metadata(term()) :: {:ok, map()} | {:error, :invalid_params}
+  def request_metadata(%{"_meta" => meta} = params) do
+    if object?(params) and object?(meta) and
+         string?(meta["io.modelcontextprotocol/protocolVersion"]) and
+         object?(meta["io.modelcontextprotocol/clientCapabilities"]) and client_info_valid?(meta) do
+      {:ok, meta}
+    else
+      {:error, :invalid_params}
+    end
+  end
+
+  def request_metadata(_params), do: {:error, :invalid_params}
+
+  defp client_info_valid?(meta) do
+    case Map.fetch(meta, "io.modelcontextprotocol/clientInfo") do
+      :error ->
+        true
+
+      {:ok, info} ->
+        object?(info) and string?(info["name"]) and string?(info["version"])
+    end
+  end
+
   defp params_valid?(message) do
     case Map.fetch(message, "params") do
       :error -> true
