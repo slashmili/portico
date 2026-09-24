@@ -41,7 +41,7 @@ defmodule Portico.Protocol.DiscoveryTest do
                 "result" => %{
                   "resultType" => "complete",
                   "supportedVersions" => ["2026-07-28"],
-                  "capabilities" => %{},
+                  "capabilities" => %{"tools" => %{}},
                   "_meta" => %{
                     "io.modelcontextprotocol/serverInfo" => %{
                       "name" => "discovery-test",

@@ -36,11 +36,11 @@ defmodule Portico.Test do
   Add `import_deps: [:portico]` to your application's `.formatter.exs` to keep
   these calls without parentheses when running `mix format`.
 
-  Calls use Portico's shared dispatcher. Currently it checks tool lookup and
-  the callback return shape; schema validation, protocol metadata validation,
-  authorization hooks, and HTTP handling are not implemented. Arguments are
-  passed through unchanged. A passing helper test does not establish MCP or
-  HTTP conformance.
+  Calls use Portico's shared tool execution path, checking tool lookup and the
+  callback return shape. These direct calls do not yet run protocol metadata
+  validation or wire result encoding. Schema validation, authorization hooks,
+  and HTTP handling are not implemented. Arguments pass through unchanged.
+  A passing helper test does not establish MCP or HTTP conformance.
   """
 
   alias Portico.{Request, Result}

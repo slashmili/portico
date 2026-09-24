@@ -2,7 +2,7 @@ defmodule Portico.Protocol.Dispatcher do
   @moduledoc false
 
   alias Portico.{Request, Result, Server}
-  alias Portico.Protocol.{Error, Validation}
+  alias Portico.Protocol.{Encoder, Error, Validation}
 
   @supported_versions ["2026-07-28"]
 
@@ -14,8 +14,8 @@ defmodule Portico.Protocol.Dispatcher do
   are ignored; no notification handlers are implemented yet.
 
   Checks the protocol version on every request before method lookup. Currently
-  `server/discover` and `tools/list` are implemented. Discovery capabilities remain
-  empty until protocol tool invocation is implemented. Listing returns the whole
+  `server/discover`, `tools/list`, and completed text `tools/call` are implemented.
+  Discovery advertises basic tools support. Listing returns the whole
   static catalog in name order and issues no pagination cursors. This is an incremental
   dispatcher, not a complete MCP implementation; HTTP, full metadata validation,
   and schema validation are still pending. Direct `call_tool/4` remains available
@@ -51,7 +51,7 @@ defmodule Portico.Protocol.Dispatcher do
   defp dispatch_method(server, %{"method" => "server/discover", "id" => id}) do
     complete(server, id, %{
       "supportedVersions" => @supported_versions,
-      "capabilities" => %{}
+      "capabilities" => %{"tools" => %{}}
     })
   end
 
@@ -64,8 +64,43 @@ defmodule Portico.Protocol.Dispatcher do
     end
   end
 
+  defp dispatch_method(server, %{"method" => "tools/call", "id" => id, "params" => params}) do
+    case Validation.tool_call(params) do
+      {:ok, name, arguments} ->
+        metadata = params["_meta"]
+
+        request = %Request{
+          id: id,
+          method: "tools/call",
+          protocol_version: metadata["io.modelcontextprotocol/protocolVersion"],
+          client_info: metadata["io.modelcontextprotocol/clientInfo"],
+          client_capabilities: metadata["io.modelcontextprotocol/clientCapabilities"]
+        }
+
+        invoke(server, name, arguments, request)
+
+      {:error, :invalid_params} ->
+        {:reply, Error.response(:invalid_params, id)}
+    end
+  end
+
   defp dispatch_method(_server, request) do
     {:reply, Error.response(:method_not_found, request["id"])}
+  end
+
+  defp invoke(server, name, arguments, request) do
+    case call_tool(server, name, arguments, request) do
+      {:error, :unknown_tool} ->
+        {:reply, Error.response(:invalid_params, request.id)}
+
+      {:reply, result, _updated_request} ->
+        case Encoder.tool_result(result) do
+          {:ok, fields} -> complete(server, request.id, fields)
+          {:error, :invalid_result} -> {:reply, Error.response(:internal_error, request.id)}
+        end
+    end
+  rescue
+    _error -> {:reply, Error.response(:internal_error, request.id)}
   end
 
   defp tool_metadata(tool) do

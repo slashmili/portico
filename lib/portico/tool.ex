@@ -24,8 +24,9 @@ defmodule Portico.Tool do
   string. Schema contents are preserved and are not yet validated against JSON
   Schema. Every tool must implement a public `call/2` callback. Use
   `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
-  the callback's return shape. Protocol validation and HTTP are not implemented
-  yet.
+  the callback's return shape. Protocol calls also validate envelopes and core
+  metadata and encode completed text results. HTTP and schema validation are
+  not implemented yet.
   """
 
   @doc "Handles tool arguments with application context and returns a completed result."

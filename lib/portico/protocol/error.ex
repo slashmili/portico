@@ -5,6 +5,7 @@ defmodule Portico.Protocol.Error do
           :invalid_request
           | :invalid_params
           | :method_not_found
+          | :internal_error
           | {:unsupported_protocol_version, String.t(), [String.t()]}
 
   @doc """
@@ -38,6 +39,7 @@ defmodule Portico.Protocol.Error do
   defp details(:invalid_request), do: %{"code" => -32600, "message" => "Invalid request"}
   defp details(:invalid_params), do: %{"code" => -32602, "message" => "Invalid params"}
   defp details(:method_not_found), do: %{"code" => -32601, "message" => "Method not found"}
+  defp details(:internal_error), do: %{"code" => -32603, "message" => "Internal error"}
 
   defp details({:unsupported_protocol_version, requested, supported}) do
     %{

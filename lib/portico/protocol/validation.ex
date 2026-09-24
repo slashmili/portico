@@ -62,6 +62,19 @@ defmodule Portico.Protocol.Validation do
 
   def request_metadata(_params), do: {:error, :invalid_params}
 
+  @doc "Checks tools/call parameter shape, without validating arguments against a schema."
+  @spec tool_call(map()) :: {:ok, String.t(), map()} | {:error, :invalid_params}
+  def tool_call(params) do
+    name = Map.get(params, "name")
+    arguments = Map.get(params, "arguments", %{})
+
+    if string?(name) and object?(arguments) do
+      {:ok, name, arguments}
+    else
+      {:error, :invalid_params}
+    end
+  end
+
   defp client_info_valid?(meta) do
     case Map.fetch(meta, "io.modelcontextprotocol/clientInfo") do
       :error ->
