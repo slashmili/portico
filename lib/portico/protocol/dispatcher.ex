@@ -14,8 +14,9 @@ defmodule Portico.Protocol.Dispatcher do
   are ignored; no notification handlers are implemented yet.
 
   Checks the protocol version on every request before method lookup. Currently
-  only `server/discover` is implemented. Its capabilities remain empty until
-  protocol tool listing and invocation are implemented. This is an incremental
+  `server/discover` and `tools/list` are implemented. Discovery capabilities remain
+  empty until protocol tool invocation is implemented. Listing returns the whole
+  static catalog in name order and issues no pagination cursors. This is an incremental
   dispatcher, not a complete MCP implementation; HTTP, full metadata validation,
   and schema validation are still pending. Direct `call_tool/4` remains available
   for application tests.
@@ -48,28 +49,52 @@ defmodule Portico.Protocol.Dispatcher do
   end
 
   defp dispatch_method(server, %{"method" => "server/discover", "id" => id}) do
+    complete(server, id, %{
+      "supportedVersions" => @supported_versions,
+      "capabilities" => %{}
+    })
+  end
+
+  defp dispatch_method(server, %{"method" => "tools/list", "id" => id, "params" => params}) do
+    if Map.has_key?(params, "cursor") do
+      {:reply, Error.response(:invalid_params, id)}
+    else
+      tools = Enum.map(Server.tools(server), &tool_metadata/1)
+      complete(server, id, %{"tools" => tools})
+    end
+  end
+
+  defp dispatch_method(_server, request) do
+    {:reply, Error.response(:method_not_found, request["id"])}
+  end
+
+  defp tool_metadata(tool) do
+    metadata = %{"name" => tool.name, "inputSchema" => tool.input_schema}
+
+    case Map.fetch(tool, :description) do
+      {:ok, description} -> Map.put(metadata, "description", description)
+      :error -> metadata
+    end
+  end
+
+  defp complete(server, id, fields) do
     info = Server.info(server)
 
     {:reply,
      %{
        "jsonrpc" => "2.0",
        "id" => id,
-       "result" => %{
-         "resultType" => "complete",
-         "supportedVersions" => @supported_versions,
-         "capabilities" => %{},
-         "_meta" => %{
-           "io.modelcontextprotocol/serverInfo" => %{
-             "name" => info.name,
-             "version" => info.version
+       "result" =>
+         Map.merge(fields, %{
+           "resultType" => "complete",
+           "_meta" => %{
+             "io.modelcontextprotocol/serverInfo" => %{
+               "name" => info.name,
+               "version" => info.version
+             }
            }
-         }
-       }
+         })
      }}
-  end
-
-  defp dispatch_method(_server, request) do
-    {:reply, Error.response(:method_not_found, request["id"])}
   end
 
   defp readable_id(%{"id" => id}) when is_integer(id), do: id
