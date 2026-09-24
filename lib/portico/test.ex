@@ -41,9 +41,10 @@ defmodule Portico.Test do
   or `client_capabilities` on the context to test different client declarations.
   Each synchronous helper call uses request ID `1`; no session state is retained.
 
-  Schema validation, authorization hooks, and HTTP handling are not implemented.
-  These checks are on decoded message structure, not recursive JSON-value or
-  schema validation. A passing helper test does not establish HTTP conformance.
+  Tool arguments use the same compiled schema validation as HTTP calls. Schema
+  failures return an error Result without invoking the callback; valid arguments
+  pass through unchanged. Authorization hooks and recursive JSON-value checks
+  remain separate work. A passing helper test does not establish HTTP conformance.
   """
 
   alias Portico.Result
@@ -107,6 +108,9 @@ defmodule Portico.Test do
   return shape or content. Metadata and version failures also raise
   `ArgumentError`. Exceptions raised by the tool propagate to the test, while
   the protocol entry point converts them to a generic internal error.
+
+  Schema-invalid argument objects return `Portico.Result.error/1` without
+  running the callback. Malformed argument containers remain request errors.
 
   Only `{:ok, %Portico.Result{}}` outcomes are supported. This helper returns
   the result, including its `is_error` flag for expected tool failures.

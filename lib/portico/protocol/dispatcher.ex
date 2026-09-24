@@ -1,7 +1,7 @@
 defmodule Portico.Protocol.Dispatcher do
   @moduledoc false
 
-  alias Portico.{Request, Result, Server}
+  alias Portico.{Request, Result, Schema, Server}
   alias Portico.Protocol.{Encoder, Error, Validation}
 
   @supported_versions ["2026-07-28"]
@@ -19,8 +19,9 @@ defmodule Portico.Protocol.Dispatcher do
   Discovery advertises basic tools support. Listing returns the whole
   static catalog in name order and issues no pagination cursors. Discovery and
   listing use private cache scope with zero TTL (immediately stale). This is an incremental
-  dispatcher, not a complete MCP implementation; full metadata validation,
-  and schema validation are still pending. Test helpers use `call_tool_request/3`
+  dispatcher, not a complete MCP implementation; full metadata validation is
+  still pending. Arguments are validated before callback execution without
+  coercion; schema failures return a completed tool error. Test helpers use `call_tool_request/3`
   for the same validation and execution with exceptions left visible to tests.
   """
   @spec dispatch(module(), term(), map()) :: {:reply, map()} | :no_response
@@ -185,14 +186,18 @@ defmodule Portico.Protocol.Dispatcher do
         {:error, :unknown_tool}
 
       %{module: module} ->
-        case module.call(arguments, request) do
-          {:ok, %Result{}} = reply ->
-            reply
+        if Schema.valid?(module.__portico_validator__(), arguments) do
+          case module.call(arguments, request) do
+            {:ok, %Result{}} = reply ->
+              reply
 
-          _other ->
-            raise ArgumentError,
-                  "invalid return from #{inspect(module)}.call/2; " <>
-                    "expected {:ok, %Portico.Result{}}"
+            _other ->
+              raise ArgumentError,
+                    "invalid return from #{inspect(module)}.call/2; " <>
+                      "expected {:ok, %Portico.Result{}}"
+          end
+        else
+          {:ok, Result.error("Tool arguments do not match the input schema.")}
         end
     end
   end

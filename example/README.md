@@ -113,10 +113,9 @@ mix format --check-formatted
 
 This is the first manual-testing checkpoint. Discovery, listing, and completed
 text tool calls work; streaming and elicitation are still pending. Schemas are
-checked at compile time as Draft 2020-12, normalized, and advertised. Argument
-validation against them is not wired into invocation yet. The `add` callback explicitly checks
-for exactly two integer arguments and returns `Portico.Result.error/1` for invalid
-inputs. This is application validation, not a general JSON Schema validator.
+checked at compile time as Draft 2020-12, normalized, and advertised. Arguments
+are validated before callbacks run. The `add` callback only performs arithmetic;
+Portico handles missing fields, wrong types, and extra properties.
 Custom `Mcp-Param` annotations are also pending.
 
 
@@ -130,8 +129,9 @@ context but is not returned. `:ok` means the callback produced a result;
 {:ok, Portico.Result.error("Provide exactly two integers, a and b.")}
 ```
 
-After restarting the example, call `add` with `{"a": "2", "b": 3}` to try it.
-The response is HTTP 200 with a completed result and `isError: true`; the Python
+After restarting the example, call `add` with `{"a": "2", "b": 3}` to see a
+schema error: "Tool arguments do not match the input schema." The callback will
+not run. The response is HTTP 200 with a completed result and `isError: true`; the Python
 client exposes this as `result.is_error`. Unknown tools and malformed protocol
 requests still return JSON-RPC errors. Unexpected callback exceptions remain
 sanitized internal errors. Local tests can use `assert result.is_error` alongside
@@ -152,9 +152,9 @@ result =
 {:ok, result}
 ```
 
-The example's invalid-input branch uses this pipeline. Python tests verify that
-both text items arrive in order with `is_error` set. `Result.text/1` and
-`Result.error/1` remain shortcuts for a single text item. All helpers return a
+This pipeline is useful for application failures that need several messages.
+Schema failures are handled automatically before the callback. `Result.text/1`
+and `Result.error/1` remain shortcuts for a single text item. All helpers return a
 new result without modifying the original.
 
 
@@ -170,3 +170,11 @@ of the tool-author API; it can be replaced without rewriting tool declarations.
 
 The Python listing test also checks the advertised schema with an independent
 Draft 2020-12 validator. These targeted tests are not full conformance testing.
+
+
+Argument validation preserves submitted values and does not insert defaults.
+JSON Schema treats `2.0` as an integer; the example accepts it and formats the sum
+as an integer. Fractional values such as `2.5`, numeric strings, booleans, and null
+are rejected for this tool. Python E2E checks these cases. Error messages are
+currently fixed and do not echo argument values; field-specific diagnostics are
+a later improvement.

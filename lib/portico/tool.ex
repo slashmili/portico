@@ -37,7 +37,11 @@ defmodule Portico.Tool do
   `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
   the callback's return shape. Protocol calls also validate envelopes and core
   metadata and encode completed text results. `Portico.Plug` serves HTTP requests;
-  argument validation against the compiled schema is not wired in yet.
+  arguments are checked against the compiled schema before the callback runs.
+  Invalid arguments return a completed tool error with a fixed message; the
+  callback is skipped. Valid arguments are passed unchanged, without coercion
+  or insertion of schema defaults. JSON Schema integers include values such
+  as `2.0`, so callbacks should account for both Elixir numeric representations.
 
   The request supplies assigns and client metadata; callbacks do not return it.
   `:ok` means a result was produced. The result's `is_error` flag distinguishes

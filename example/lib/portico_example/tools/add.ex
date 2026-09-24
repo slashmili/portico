@@ -9,17 +9,12 @@ defmodule PorticoExample.Tools.Add do
     }
 
   @impl true
-  def call(%{"a" => a, "b" => b} = arguments, _request)
-      when is_integer(a) and is_integer(b) and map_size(arguments) == 2 do
-    {:ok, Portico.Result.text(Integer.to_string(a + b))}
-  end
-
-  def call(_arguments, _request) do
+  def call(%{"a" => a, "b" => b}, _request) do
+    # JSON Schema integers include values such as 2.0. Portico validates but
+    # does not coerce arguments, so normalize them here for integer output.
     result =
       %Portico.Result{}
-      |> Portico.Result.text("Provide exactly two integers, a and b.")
-      |> Portico.Result.text("Example: a=2, b=3.")
-      |> Portico.Result.put_error(true)
+      |> Portico.Result.text(Integer.to_string(trunc(a) + trunc(b)))
 
     {:ok, result}
   end

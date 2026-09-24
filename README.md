@@ -19,8 +19,9 @@ server, and real HTTP tests using the official Python MCP client.
 
 Current support: discovery, tool listing, and completed text tool calls through
 `Portico.Plug`, including explicit tool errors with `Portico.Result.error/1`.
-Schema declarations are checked at compile time against Draft 2020-12. Argument
-validation, streaming, and elicitation remain in progress.
+Schema declarations are checked at compile time against Draft 2020-12, and
+arguments are validated before callbacks run. Streaming and elicitation remain
+in progress.
 
 Run library checks with:
 

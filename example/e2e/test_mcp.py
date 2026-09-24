@@ -101,7 +101,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
-                for a, b, expected in [(2, 3, "5"), (-4, 2, "-2"), (0, 0, "0")]:
+                for a, b, expected in [(2, 3, "5"), (-4, 2, "-2"), (0, 0, "0"), (2.0, 3.0, "5")]:
                     with self.subTest(a=a, b=b):
                         result = await client.call_tool("add", {"a": a, "b": b})
                         self.assertFalse(result.is_error)
@@ -113,15 +113,17 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
-                for arguments in [{}, {"a": "2", "b": 3}, {"a": 2, "b": 3, "extra": True}]:
+                for arguments in [
+                    {}, {"a": "2", "b": 3}, {"a": 2, "b": 3, "extra": True},
+                    {"a": 2.5, "b": 3}, {"a": True, "b": 3}, {"a": None, "b": 3},
+                ]:
                     with self.subTest(arguments=arguments):
                         result = await client.call_tool("add", arguments)
                         self.assertTrue(result.is_error)
-                        self.assertEqual(len(result.content), 2)
+                        self.assertEqual(len(result.content), 1)
                         self.assertTrue(all(isinstance(item, TextContent) for item in result.content))
                         self.assertEqual([item.text for item in result.content], [
-                            "Provide exactly two integers, a and b.",
-                            "Example: a=2, b=3.",
+                            "Tool arguments do not match the input schema.",
                         ])
 
 

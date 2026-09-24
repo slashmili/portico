@@ -42,8 +42,8 @@ defmodule Portico.Plug do
   `text/event-stream`, as required by MCP 2026-07-28. This initial adapter
   returns JSON only. Valid notifications are ignored with an empty 202 response.
   All responses halt the connection. No listener, sessions, CORS response headers,
-  streaming, or authentication scheme are installed by this plug. Full schema
-  validation and custom `Mcp-Param` header annotations are not supported yet.
+  streaming, or authentication scheme are installed by this plug. Custom `Mcp-Param`
+  header annotations are not supported yet.
   """
 
   @behaviour Plug

@@ -16,7 +16,7 @@ defmodule Portico.Server do
   Tool modules use `Portico.Tool` to define their metadata and callback.
   Invoke tools with `Portico.Test.call_tool/4`. The protocol dispatcher supports
   discovery, listing, and completed tool calls through `Portico.Plug`. Schema
-  declarations are checked at compilation; argument validation is still pending.
+  declarations are checked at compilation and arguments before tool execution.
   """
 
   alias Portico.Server.Compiler

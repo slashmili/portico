@@ -58,7 +58,7 @@ defmodule Portico.TestTest do
     end
   end
 
-  test "arguments pass through unchanged while schema validation is deferred" do
+  test "arguments allowed by the schema pass through unchanged" do
     arguments = %{"extra" => [1, "2"], "application_key" => true}
     call_tool(Server, "observe", arguments, assigns: %{observer: self()})
     assert_received {:called, ^arguments, %Request{}}
