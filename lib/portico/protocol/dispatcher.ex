@@ -18,44 +18,82 @@ defmodule Portico.Protocol.Dispatcher do
   Discovery advertises basic tools support. Listing returns the whole
   static catalog in name order and issues no pagination cursors. This is an incremental
   dispatcher, not a complete MCP implementation; HTTP, full metadata validation,
-  and schema validation are still pending. Direct `call_tool/4` remains available
-  for application tests.
+  and schema validation are still pending. Test helpers use `call_tool_request/3`
+  for the same validation and execution with exceptions left visible to tests.
   """
   @spec dispatch(module(), term()) :: {:reply, map()} | :no_response
   def dispatch(server, message) do
+    case prepare(message, %{}) do
+      {:ok, message, context} -> dispatch_method(server, message, context)
+      :no_response -> :no_response
+      {:error, reason} -> {:reply, Error.response(reason, readable_id(message))}
+    end
+  end
+
+  @doc false
+  def call_tool_request(server, message, assigns) do
+    case prepare(message, assigns) do
+      {:ok, %{"method" => "tools/call", "params" => params}, context} ->
+        case execute_call(server, params, context) do
+          {:reply, result, updated, _fields} -> {:reply, result, updated}
+          {:error, _reason} = error -> error
+        end
+
+      {:ok, _message, _context} ->
+        {:error, :method_not_found}
+
+      :no_response ->
+        {:error, :invalid_request}
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp prepare(message, assigns) do
     case Validation.envelope(message) do
-      {:error, :invalid_request} ->
-        {:reply, Error.response(:invalid_request, readable_id(message))}
+      {:error, :invalid_request} = error ->
+        error
 
       {:ok, :notification, _notification} ->
         :no_response
 
       {:ok, :request, request} ->
-        case Validation.request_metadata(Map.get(request, "params", %{})) do
-          {:error, :invalid_params} ->
-            {:reply, Error.response(:invalid_params, request["id"])}
+        params = Map.get(request, "params", %{})
 
-          {:ok, metadata} ->
-            version = metadata["io.modelcontextprotocol/protocolVersion"]
+        with {:ok, metadata} <- Validation.request_metadata(params) do
+          version = metadata["io.modelcontextprotocol/protocolVersion"]
 
-            if version in @supported_versions do
-              dispatch_method(server, request)
-            else
-              reason = {:unsupported_protocol_version, version, @supported_versions}
-              {:reply, Error.response(reason, request["id"])}
-            end
+          if version in @supported_versions do
+            context = %Request{
+              id: request["id"],
+              method: request["method"],
+              protocol_version: version,
+              client_info: metadata["io.modelcontextprotocol/clientInfo"],
+              client_capabilities: metadata["io.modelcontextprotocol/clientCapabilities"],
+              assigns: assigns
+            }
+
+            {:ok, request, context}
+          else
+            {:error, {:unsupported_protocol_version, version, @supported_versions}}
+          end
         end
     end
   end
 
-  defp dispatch_method(server, %{"method" => "server/discover", "id" => id}) do
+  defp dispatch_method(server, %{"method" => "server/discover", "id" => id}, _context) do
     complete(server, id, %{
       "supportedVersions" => @supported_versions,
       "capabilities" => %{"tools" => %{}}
     })
   end
 
-  defp dispatch_method(server, %{"method" => "tools/list", "id" => id, "params" => params}) do
+  defp dispatch_method(
+         server,
+         %{"method" => "tools/list", "id" => id, "params" => params},
+         _context
+       ) do
     if Map.has_key?(params, "cursor") do
       {:reply, Error.response(:invalid_params, id)}
     else
@@ -64,43 +102,34 @@ defmodule Portico.Protocol.Dispatcher do
     end
   end
 
-  defp dispatch_method(server, %{"method" => "tools/call", "id" => id, "params" => params}) do
-    case Validation.tool_call(params) do
-      {:ok, name, arguments} ->
-        metadata = params["_meta"]
-
-        request = %Request{
-          id: id,
-          method: "tools/call",
-          protocol_version: metadata["io.modelcontextprotocol/protocolVersion"],
-          client_info: metadata["io.modelcontextprotocol/clientInfo"],
-          client_capabilities: metadata["io.modelcontextprotocol/clientCapabilities"]
-        }
-
-        invoke(server, name, arguments, request)
-
-      {:error, :invalid_params} ->
-        {:reply, Error.response(:invalid_params, id)}
-    end
+  defp dispatch_method(server, %{"method" => "tools/call", "params" => params}, context) do
+    invoke(server, params, context)
   end
 
-  defp dispatch_method(_server, request) do
+  defp dispatch_method(_server, request, _context) do
     {:reply, Error.response(:method_not_found, request["id"])}
   end
 
-  defp invoke(server, name, arguments, request) do
-    case call_tool(server, name, arguments, request) do
-      {:error, :unknown_tool} ->
+  defp invoke(server, params, request) do
+    case execute_call(server, params, request) do
+      {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
-      {:reply, result, _updated_request} ->
-        case Encoder.tool_result(result) do
-          {:ok, fields} -> complete(server, request.id, fields)
-          {:error, :invalid_result} -> {:reply, Error.response(:internal_error, request.id)}
-        end
+      {:reply, _result, _updated_request, fields} ->
+        complete(server, request.id, fields)
     end
   rescue
     _error -> {:reply, Error.response(:internal_error, request.id)}
+  end
+
+  defp execute_call(server, params, request) do
+    with {:ok, name, arguments} <- Validation.tool_call(params),
+         {:reply, result, updated} <- call_tool(server, name, arguments, request) do
+      case Encoder.tool_result(result) do
+        {:ok, fields} -> {:reply, result, updated, fields}
+        {:error, :invalid_result} -> raise ArgumentError, "invalid tool result content"
+      end
+    end
   end
 
   defp tool_metadata(tool) do

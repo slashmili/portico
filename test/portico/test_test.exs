@@ -59,9 +59,60 @@ defmodule Portico.TestTest do
   end
 
   test "arguments pass through unchanged while schema validation is deferred" do
-    arguments = %{"extra" => [1, "2"], :application_key => true}
+    arguments = %{"extra" => [1, "2"], "application_key" => true}
     call_tool(Server, "observe", arguments, assigns: %{observer: self()})
     assert_received {:called, ^arguments, %Request{}}
+  end
+
+  test "helper supplies validated protocol context" do
+    call_tool Server, "observe", %{}, assigns: %{observer: self()}
+    assert_received {:called, %{}, request}
+    assert request.id == 1
+    assert request.method == "tools/call"
+    assert request.protocol_version == "2026-07-28"
+    assert request.client_capabilities == %{}
+    assert request.client_info == nil
+  end
+
+  test "helper validates custom context metadata before invoking a callback" do
+    context = %Portico.Test.Context{server: Server, assigns: %{observer: self()}}
+
+    for context <- [
+          %{context | protocol_version: "old"},
+          %{context | client_capabilities: nil},
+          %{context | client_info: %{}}
+        ] do
+      assert_raise ArgumentError, fn ->
+        call_tool context, "observe", %{}
+      end
+
+      refute_received {:called, _, _}
+    end
+  end
+
+  test "helper passes declared client metadata into the request" do
+    info = %{"name" => "test-client", "version" => "1"}
+    caps = %{"elicitation" => %{"form" => %{}}}
+
+    context = %Portico.Test.Context{
+      server: Server,
+      assigns: %{observer: self()},
+      client_info: info,
+      client_capabilities: caps
+    }
+
+    call_tool context, "observe", %{}
+    assert_received {:called, %{}, request}
+    assert request.client_info == info
+    assert request.client_capabilities == caps
+  end
+
+  test "helper rejects result contents the protocol encoder cannot handle" do
+    result = %Result{content: [%{type: "text", text: 42}]}
+
+    assert_raise ArgumentError, ~r/invalid tool result content/, fn ->
+      call_tool Server, "broken", %{"return" => {:reply, result, %Request{}}}
+    end
   end
 
   test "the shared dispatcher preserves the request returned by the callback" do
@@ -115,8 +166,8 @@ defmodule Portico.TestTest do
   end
 
   test "arguments must be a plain map" do
-    for arguments <- [nil, [], %Request{}] do
-      assert_raise ArgumentError, "expected tool arguments to be a plain map", fn ->
+    for arguments <- [nil, [], %Request{}, %{a: 2}] do
+      assert_raise ArgumentError, ~r/invalid_params/, fn ->
         call_tool(Server, "add", arguments)
       end
     end

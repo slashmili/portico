@@ -36,14 +36,17 @@ defmodule Portico.Test do
   Add `import_deps: [:portico]` to your application's `.formatter.exs` to keep
   these calls without parentheses when running `mix format`.
 
-  Calls use Portico's shared tool execution path, checking tool lookup and the
-  callback return shape. These direct calls do not yet run protocol metadata
-  validation or wire result encoding. Schema validation, authorization hooks,
-  and HTTP handling are not implemented. Arguments pass through unchanged.
-  A passing helper test does not establish MCP or HTTP conformance.
+  Calls supply valid default metadata and use the shared protocol validators,
+  tool execution, and result encoder. Customize `protocol_version`, `client_info`,
+  or `client_capabilities` on the context to test different client declarations.
+  Each synchronous helper call uses request ID `1`; no session state is retained.
+
+  Schema validation, authorization hooks, and HTTP handling are not implemented.
+  These checks are on decoded message structure, not recursive JSON-value or
+  schema validation. A passing helper test does not establish HTTP conformance.
   """
 
-  alias Portico.{Request, Result}
+  alias Portico.Result
   alias Portico.Protocol.Dispatcher
   alias Portico.Test.Context
 
@@ -99,9 +102,11 @@ defmodule Portico.Test do
   modifying the context or affecting subsequent calls. Direct module calls
   start with empty assigns.
 
-  Tool names must be strings and arguments must be plain maps. Raises
+  Tool names must be strings and arguments must be string-keyed plain maps. Raises
   `ArgumentError` for an unknown tool, invalid options, or an invalid callback
-  return shape. Exceptions raised by the tool propagate to the test.
+  return shape or content. Metadata and version failures also raise
+  `ArgumentError`. Exceptions raised by the tool propagate to the test, while
+  the protocol entry point converts them to a generic internal error.
 
   Only `{:reply, %Portico.Result{}, %Portico.Request{}}` outcomes are supported.
   The updated request is retained by the dispatcher; this helper returns only
@@ -110,17 +115,33 @@ defmodule Portico.Test do
   @spec call_tool(module() | Context.t(), String.t(), map(), keyword()) :: Result.t()
   def call_tool(target, name, arguments, options \\ [])
 
-  def call_tool(%Context{server: server, assigns: defaults}, name, arguments, options) do
+  def call_tool(%Context{server: server, assigns: defaults} = context, name, arguments, options) do
     options = Keyword.validate!(options, assigns: %{})
     assigns = Keyword.fetch!(options, :assigns)
     validate_assigns!(defaults)
     validate_assigns!(assigns)
 
-    request = %Request{assigns: Map.merge(defaults, assigns)}
+    metadata = %{
+      "io.modelcontextprotocol/protocolVersion" => context.protocol_version,
+      "io.modelcontextprotocol/clientCapabilities" => context.client_capabilities
+    }
 
-    case Dispatcher.call_tool(server, name, arguments, request) do
+    metadata =
+      if is_nil(context.client_info),
+        do: metadata,
+        else: Map.put(metadata, "io.modelcontextprotocol/clientInfo", context.client_info)
+
+    message = %{
+      "jsonrpc" => "2.0",
+      "id" => 1,
+      "method" => "tools/call",
+      "params" => %{"name" => name, "arguments" => arguments, "_meta" => metadata}
+    }
+
+    case Dispatcher.call_tool_request(server, message, Map.merge(defaults, assigns)) do
       {:reply, result, _request} -> result
       {:error, :unknown_tool} -> raise ArgumentError, "unknown tool #{inspect(name)}"
+      {:error, reason} -> raise ArgumentError, "invalid tool request: #{inspect(reason)}"
     end
   end
 

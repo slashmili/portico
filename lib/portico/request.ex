@@ -6,8 +6,8 @@ defmodule Portico.Request do
   with a fresh request; assigns are not retained between requests.
 
   Protocol invocation fills `id`, `method`, `protocol_version`, `client_info`,
-  and `client_capabilities` from checked request metadata. Direct application
-  test calls currently leave these fields at their defaults. Client information
+  and `client_capabilities` from checked request metadata. Test helpers supply
+  valid default metadata, configurable through `Portico.Test.Context`. Client information
   and capabilities describe the caller's claims, not authenticated identity.
 
   This struct does not authenticate its contents. The host application is
