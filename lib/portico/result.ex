@@ -7,6 +7,7 @@ defmodule Portico.Result do
 
   Currently only text content is supported. Use `text/1` for success and
   `error/1` for an expected tool failure with a client-facing explanation.
+  Build results incrementally with `text/2` and `put_error/2`.
   """
 
   defstruct content: [], is_error: false
@@ -28,11 +29,30 @@ defmodule Portico.Result do
   """
   @spec text(String.t()) :: t()
   def text(text) when is_binary(text) do
+    text(%__MODULE__{}, text)
+  end
+
+  @doc """
+  Appends a UTF-8 text item, preserving existing content and the error flag.
+
+  Accepts the same text values as `text/1`. Returns a new result; the original
+  is unchanged. Existing content is preserved and checked by the encoder when
+  the callback returns.
+
+  ## Examples
+
+      iex> result = %Portico.Result{} |> Portico.Result.text("First") |> Portico.Result.text("Second")
+      iex> result.content
+      [%{type: "text", text: "First"}, %{type: "text", text: "Second"}]
+  """
+  @spec text(t(), String.t()) :: t()
+  def text(%__MODULE__{content: content} = result, text)
+      when is_binary(text) and is_list(content) do
     unless String.valid?(text) do
       raise ArgumentError, "expected text to be a valid UTF-8 string"
     end
 
-    %__MODULE__{content: [%{type: "text", text: text}]}
+    %{result | content: content ++ [%{type: "text", text: text}]}
   end
 
   @doc """
@@ -53,6 +73,25 @@ defmodule Portico.Result do
   """
   @spec error(String.t()) :: t()
   def error(message) when is_binary(message) do
-    %{text(message) | is_error: true}
+    message |> text() |> put_error(true)
+  end
+
+  @doc """
+  Sets or clears the tool error flag without changing content.
+
+  Accepts only a boolean. Both success and error results are returned from
+  callbacks as `{:ok, result}`.
+
+  ## Examples
+
+      iex> result = Portico.Result.text("Try another value.") |> Portico.Result.put_error(true)
+      iex> result.is_error
+      true
+      iex> Portico.Result.put_error(result, false).is_error
+      false
+  """
+  @spec put_error(t(), boolean()) :: t()
+  def put_error(%__MODULE__{} = result, is_error) when is_boolean(is_error) do
+    %{result | is_error: is_error}
   end
 end

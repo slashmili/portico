@@ -46,4 +46,45 @@ defmodule Portico.ResultTest do
 
     assert_raise ArgumentError, fn -> Result.error(<<255>>) end
   end
+
+  test "text appends in order while preserving the original result and error flag" do
+    original = Result.error("first")
+    result = original |> Result.text("Grüße\n") |> Result.text("")
+
+    assert result.content == [
+             %{type: "text", text: "first"},
+             %{type: "text", text: "Grüße\n"},
+             %{type: "text", text: ""}
+           ]
+
+    assert result.is_error
+    assert original == Result.error("first")
+    assert Result.text(%Result{}, "first") == Result.text("first")
+  end
+
+  test "put_error sets and clears the flag without changing content" do
+    original = Result.text("message")
+    failure = Result.put_error(original, true)
+    assert failure == Result.error("message")
+    assert Result.put_error(failure, false) == original
+    assert Result.put_error(failure, true) == failure
+    refute original.is_error
+  end
+
+  test "text append validates the new text and requires a result" do
+    for value <- [nil, 42, :ok, %{}] do
+      assert_raise FunctionClauseError, fn -> Result.text(%Result{}, value) end
+    end
+
+    assert_raise ArgumentError, fn -> Result.text(%Result{}, <<255>>) end
+    assert_raise FunctionClauseError, fn -> apply(Result, :text, [%{}, "hello"]) end
+  end
+
+  test "put_error requires a result and a boolean" do
+    for value <- [nil, 1, "true", :error] do
+      assert_raise FunctionClauseError, fn -> Result.put_error(%Result{}, value) end
+    end
+
+    assert_raise FunctionClauseError, fn -> apply(Result, :put_error, [%{}, true]) end
+  end
 end

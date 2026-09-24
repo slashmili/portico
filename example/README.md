@@ -63,10 +63,11 @@ no authentication or CORS preflight support.
 
 ## Test with the official Python MCP client
 
-Keep the Elixir server running in one terminal. In a second terminal, from this
-directory, use Python 3.11 or newer:
+From this directory, use Python 3.11 or newer. No manually running server is
+needed for the default test command:
 
 ```sh
+mix deps.get
 python3 -m venv .venv
 .venv/bin/python -m pip install -r e2e/requirements.txt
 .venv/bin/python -m unittest discover -s e2e -v
@@ -77,10 +78,13 @@ The suite pins the [official MCP SDK](https://pypi.org/project/mcp/2.2.0/) to
 negative, and zero inputs, plus expected errors for invalid inputs, through the
 SDK over HTTP. Each connection asserts
 protocol version `2026-07-28`; fallback to another version fails the test.
-No mocks or substituted protocol messages are used. Tests fail if the server is
-unavailable and have bounded timeouts.
+No mocks or substituted protocol messages are used. By default, the suite starts
+a freshly compiled Elixir server on an OS-assigned loopback port and stops it
+afterward, including when tests fail. Startup and requests have bounded timeouts.
+This avoids testing an older app process after editing the source.
 
-For another port, set the endpoint explicitly:
+To test your own running server instead, set the endpoint explicitly. Restart
+that server after code changes; the suite does not manage an external server:
 
 ```sh
 MCP_URL=http://127.0.0.1:4001/mcp .venv/bin/python -m unittest discover -s e2e -v
@@ -131,3 +135,23 @@ client exposes this as `result.is_error`. Unknown tools and malformed protocol
 requests still return JSON-RPC errors. Unexpected callback exceptions remain
 sanitized internal errors. Local tests can use `assert result.is_error` alongside
 `assert_text result, "..."`.
+
+
+## Build a result incrementally
+
+`text/2` appends content in order and `put_error/2` sets or clears the error flag:
+
+```elixir
+result =
+  %Portico.Result{}
+  |> Portico.Result.text("Provide exactly two integers, a and b.")
+  |> Portico.Result.text("Example: a=2, b=3.")
+  |> Portico.Result.put_error(true)
+
+{:ok, result}
+```
+
+The example's invalid-input branch uses this pipeline. Python tests verify that
+both text items arrive in order with `is_error` set. `Result.text/1` and
+`Result.error/1` remain shortcuts for a single text item. All helpers return a
+new result without modifying the original.

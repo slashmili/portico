@@ -15,6 +15,12 @@ defmodule PorticoExample.Tools.Add do
   end
 
   def call(_arguments, _request) do
-    {:ok, Portico.Result.error("Provide exactly two integers, a and b.")}
+    result =
+      %Portico.Result{}
+      |> Portico.Result.text("Provide exactly two integers, a and b.")
+      |> Portico.Result.text("Example: a=2, b=3.")
+      |> Portico.Result.put_error(true)
+
+    {:ok, result}
   end
 end

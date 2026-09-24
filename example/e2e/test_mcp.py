@@ -1,14 +1,67 @@
-"""Real HTTP checks against the running Elixir example (no mocks)."""
+"""Real HTTP checks with an owned Elixir server, or an explicit MCP_URL."""
 
 import asyncio
 import os
+from pathlib import Path
+import signal
+import subprocess
+import tempfile
+import time
 import unittest
 
 from mcp import Client
 from mcp.types import TextContent
 
-URL = os.environ.get("MCP_URL", "http://127.0.0.1:4000/mcp")
+URL = os.environ.get("MCP_URL")
 PROTOCOL_VERSION = "2026-07-28"
+
+
+def setUpModule():
+    global URL
+    if URL:
+        print(f"Testing external server: {URL}", flush=True)
+        return
+
+    temporary = tempfile.TemporaryDirectory(prefix="portico-e2e-")
+    unittest.addModuleCleanup(temporary.cleanup)
+    ready = Path(temporary.name) / "port"
+    log_path = Path(temporary.name) / "server.log"
+    output = log_path.open("w")
+    unittest.addModuleCleanup(output.close)
+    environment = dict(os.environ, MIX_ENV="test", PORTICO_E2E_READY_FILE=str(ready))
+    process = subprocess.Popen(
+        ["mix", "run", "e2e/server.exs"],
+        cwd=Path(__file__).resolve().parents[1],
+        env=environment,
+        stdout=output,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    def stop_server():
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+
+    unittest.addModuleCleanup(stop_server)
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            break
+        if ready.exists() and (port := ready.read_text().strip()):
+            URL = f"http://127.0.0.1:{int(port)}/mcp"
+            print(f"Testing fresh example server: {URL}", flush=True)
+            return
+        time.sleep(0.05)
+
+    raise RuntimeError(
+        "Example server did not start. Run `mix deps.get` in example/.\n"
+        + log_path.read_text()[-8000:]
+    )
 
 
 class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
@@ -62,9 +115,12 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     with self.subTest(arguments=arguments):
                         result = await client.call_tool("add", arguments)
                         self.assertTrue(result.is_error)
-                        self.assertEqual(len(result.content), 1)
-                        self.assertIsInstance(result.content[0], TextContent)
-                        self.assertEqual(result.content[0].text, "Provide exactly two integers, a and b.")
+                        self.assertEqual(len(result.content), 2)
+                        self.assertTrue(all(isinstance(item, TextContent) for item in result.content))
+                        self.assertEqual([item.text for item in result.content], [
+                            "Provide exactly two integers, a and b.",
+                            "Example: a=2, b=3.",
+                        ])
 
 
 if __name__ == "__main__":

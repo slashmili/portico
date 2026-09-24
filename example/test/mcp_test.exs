@@ -18,6 +18,7 @@ defmodule PorticoExample.MCPTest do
       result = call_tool mcp, "add", arguments
       assert result.is_error
       assert_text result, "Provide exactly two integers, a and b."
+      assert_text result, "Example: a=2, b=3."
     end
   end
 end
