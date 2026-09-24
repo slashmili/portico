@@ -17,7 +17,8 @@ defmodule Portico.Protocol.Dispatcher do
   Checks the protocol version on every request before method lookup. Currently
   `server/discover`, `tools/list`, and completed text `tools/call` are implemented.
   Discovery advertises basic tools support. Listing returns the whole
-  static catalog in name order and issues no pagination cursors. This is an incremental
+  static catalog in name order and issues no pagination cursors. Discovery and
+  listing use private cache scope with zero TTL (immediately stale). This is an incremental
   dispatcher, not a complete MCP implementation; full metadata validation,
   and schema validation are still pending. Test helpers use `call_tool_request/3`
   for the same validation and execution with exceptions left visible to tests.
@@ -86,6 +87,8 @@ defmodule Portico.Protocol.Dispatcher do
   defp dispatch_method(server, %{"method" => "server/discover", "id" => id}, _context) do
     complete(server, id, %{
       "supportedVersions" => @supported_versions,
+      "cacheScope" => "private",
+      "ttlMs" => 0,
       "capabilities" => %{"tools" => %{}}
     })
   end
@@ -99,7 +102,7 @@ defmodule Portico.Protocol.Dispatcher do
       {:reply, Error.response(:invalid_params, id)}
     else
       tools = Enum.map(Server.tools(server), &tool_metadata/1)
-      complete(server, id, %{"tools" => tools})
+      complete(server, id, %{"tools" => tools, "cacheScope" => "private", "ttlMs" => 0})
     end
   end
 

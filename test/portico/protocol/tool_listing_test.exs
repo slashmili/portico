@@ -50,6 +50,8 @@ defmodule Portico.Protocol.ToolListingTest do
              "id" => 0,
              "result" => %{
                "resultType" => "complete",
+               "cacheScope" => "private",
+               "ttlMs" => 0,
                "_meta" => %{
                  "io.modelcontextprotocol/serverInfo" => %{
                    "name" => "listing-test",
@@ -91,6 +93,8 @@ defmodule Portico.Protocol.ToolListingTest do
   test "an independent server with no tools returns an empty list" do
     assert {:reply, %{"result" => result}} = Dispatcher.dispatch(Empty, request())
     assert result["tools"] == []
+    assert result["cacheScope"] == "private"
+    assert result["ttlMs"] == 0
     assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "empty"
     refute Map.has_key?(result, "nextCursor")
   end

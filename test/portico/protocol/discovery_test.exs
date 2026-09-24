@@ -40,6 +40,8 @@ defmodule Portico.Protocol.DiscoveryTest do
                 "id" => "discover-1",
                 "result" => %{
                   "resultType" => "complete",
+                  "cacheScope" => "private",
+                  "ttlMs" => 0,
                   "supportedVersions" => ["2026-07-28"],
                   "capabilities" => %{"tools" => %{}},
                   "_meta" => %{
