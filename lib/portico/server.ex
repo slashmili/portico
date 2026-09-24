@@ -14,7 +14,8 @@ defmodule Portico.Server do
   have to follow semantic versioning.
 
   Tool modules use `Portico.Tool` to define their metadata and callback.
-  Execution, schema validation, and protocol discovery are not implemented yet.
+  Invoke tools with `Portico.Test.call_tool/4`. Schema validation and protocol
+  discovery are not implemented yet.
   """
 
   alias Portico.Server.Compiler

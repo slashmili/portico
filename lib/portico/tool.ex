@@ -22,8 +22,10 @@ defmodule Portico.Tool do
 
   `:input_schema` must be a plain map; `:description` is an optional UTF-8
   string. Schema contents are preserved and are not yet validated against JSON
-  Schema. Every tool must implement a public `call/2` callback. Invocation
-  through Portico and callback return validation are not implemented yet.
+  Schema. Every tool must implement a public `call/2` callback. Use
+  `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
+  the callback's return shape. Protocol validation and HTTP are not implemented
+  yet.
   """
 
   @doc "Handles tool arguments with application context and returns a completed result."
