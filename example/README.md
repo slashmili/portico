@@ -113,7 +113,8 @@ mix format --check-formatted
 
 This is the first manual-testing checkpoint. Discovery, listing, and completed
 text tool calls work; streaming and elicitation are still pending. Schemas are
-advertised but not yet validated by Portico. The `add` callback explicitly checks
+checked at compile time as Draft 2020-12, normalized, and advertised. Argument
+validation against them is not wired into invocation yet. The `add` callback explicitly checks
 for exactly two integer arguments and returns `Portico.Result.error/1` for invalid
 inputs. This is application validation, not a general JSON Schema validator.
 Custom `Mcp-Param` annotations are also pending.
@@ -155,3 +156,17 @@ The example's invalid-input branch uses this pipeline. Python tests verify that
 both text items arrive in order with `is_error` set. `Result.text/1` and
 `Result.error/1` remain shortcuts for a single text item. All helpers return a
 new result without modifying the original.
+
+
+## Schema declarations
+
+Keep schemas as ordinary maps. Portico normalizes atom keys to strings and checks
+schema validity at compilation. Schema values use JSON types (for example,
+`type: "integer"` and `required: ["a"]`). Ambiguous atom/string duplicate keys,
+non-JSON values, invalid keywords, unsupported dialects, and unresolved references
+fail compilation. Local references work without network fetching. `format`
+remains an annotation. JSV is behind an internal Portico boundary and is not part
+of the tool-author API; it can be replaced without rewriting tool declarations.
+
+The Python listing test also checks the advertised schema with an independent
+Draft 2020-12 validator. These targeted tests are not full conformance testing.

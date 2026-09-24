@@ -41,7 +41,8 @@ defmodule Portico.Server.Compiler do
       error!(env, "expected :input_schema to be a plain map")
     end
 
-    definition = %{input_schema: schema}
+    {schema, validator} = Portico.Schema.build!(schema, env)
+    definition = %{input_schema: schema, validator: validator}
 
     case Keyword.fetch(options, :description) do
       {:ok, description} ->

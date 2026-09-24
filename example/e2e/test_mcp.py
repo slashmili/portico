@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 
+from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.types import TextContent
 
@@ -87,6 +88,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)
                 tool = listing.tools[0]
+                Draft202012Validator.check_schema(tool.input_schema)
                 self.assertEqual(tool.description, "Add two integers.")
                 self.assertEqual(tool.input_schema, {
                     "type": "object",

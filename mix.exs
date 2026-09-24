@@ -21,7 +21,8 @@ defmodule Portico.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:plug, "~> 1.20"}
+      {:plug, "~> 1.20"},
+      {:jsv, "~> 0.22.0"}
     ]
   end
 end

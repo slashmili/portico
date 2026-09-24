@@ -40,13 +40,16 @@ defmodule Portico.ServerTest do
     assert Server.info(Example) == %{name: "example", version: "dev"}
   end
 
-  test "tools are sorted by name and preserve schemas as declared" do
+  test "tools are sorted by name with normalized JSON schemas" do
     assert Server.tools(Example) == [
              %{
                name: "add",
                module: Add,
                description: "Add a number",
-               input_schema: %{type: "object", properties: %{a: %{type: "number"}}}
+               input_schema: %{
+                 "type" => "object",
+                 "properties" => %{"a" => %{"type" => "number"}}
+               }
              },
              %{name: "zebra", module: Zebra, input_schema: %{"type" => "object"}}
            ]

@@ -15,7 +15,8 @@ defmodule Portico.Server do
 
   Tool modules use `Portico.Tool` to define their metadata and callback.
   Invoke tools with `Portico.Test.call_tool/4`. The protocol dispatcher supports
-  server discovery; schema validation and HTTP handling are not implemented yet.
+  discovery, listing, and completed tool calls through `Portico.Plug`. Schema
+  declarations are checked at compilation; argument validation is still pending.
   """
 
   alias Portico.Server.Compiler
@@ -73,7 +74,7 @@ defmodule Portico.Server do
 
   @doc """
   Returns all declared tools sorted by name, including the implementing module
-  and unchanged schema.
+  and normalized, string-keyed JSON Schema.
 
   This is static inspection of application declarations. It does not apply
   authorization or represent a caller-specific protocol tool listing.

@@ -21,12 +21,23 @@ defmodule Portico.Tool do
   A tool module can be reused under different names or by multiple servers.
 
   `:input_schema` must be a plain map; `:description` is an optional UTF-8
-  string. Schema contents are preserved and are not yet validated against JSON
-  Schema. Every tool must implement a public `call/2` callback. Use
+  string. Schemas are checked at compilation against Draft 2020-12 and built
+  into an internal validator. Atom map keys are normalized recursively to strings;
+  duplicate normalized keys and non-JSON values are rejected. Values such as
+  types and required property names must be JSON strings, not atoms. Catalogs
+  expose the normalized schema. JSV is an internal implementation detail.
+
+  The initial dialect is `https://json-schema.org/draft/2020-12/schema`, also
+  used when `$schema` is absent. Local references and bundled meta-schemas are
+  available; no remote references are fetched. Unsupported dialects and unresolved
+  references fail compilation. `format` and content keywords remain annotations,
+  not assertions about string values or encoded content.
+
+  Every tool must implement a public `call/2` callback. Use
   `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
   the callback's return shape. Protocol calls also validate envelopes and core
   metadata and encode completed text results. `Portico.Plug` serves HTTP requests;
-  schema validation is not implemented yet.
+  argument validation against the compiled schema is not wired in yet.
 
   The request supplies assigns and client metadata; callbacks do not return it.
   `:ok` means a result was produced. The result's `is_error` flag distinguishes
@@ -62,11 +73,15 @@ defmodule Portico.Tool do
         description: "Portico.Tool requires a public call/2 callback"
     end
 
-    metadata = Module.get_attribute(env.module, :portico_tool_metadata)
+    {validator, metadata} =
+      env.module |> Module.get_attribute(:portico_tool_metadata) |> Map.pop!(:validator)
 
     quote do
       @doc false
       def __portico_tool__, do: unquote(Macro.escape(metadata))
+
+      @doc false
+      def __portico_validator__, do: unquote(Macro.escape(validator))
     end
   end
 end

@@ -62,7 +62,10 @@ defmodule Portico.Protocol.ToolListingTest do
                  %{
                    "name" => "alpha",
                    "description" => "Describe a value",
-                   "inputSchema" => %{type: "object", properties: %{value: %{type: "string"}}}
+                   "inputSchema" => %{
+                     "type" => "object",
+                     "properties" => %{"value" => %{"type" => "string"}}
+                   }
                  },
                  %{
                    "name" => "zebra",
@@ -78,7 +81,7 @@ defmodule Portico.Protocol.ToolListingTest do
     assert Dispatcher.dispatch(Server, request()) == {:reply, response}
   end
 
-  test "ordinary raw schema maps survive JSON encoding and local declarations stay unchanged" do
+  test "normalized schemas are identical in the catalog and JSON listing" do
     assert {:reply, response} = Dispatcher.dispatch(Server, request())
     decoded = response |> JSON.encode!() |> JSON.decode!()
 
@@ -87,7 +90,7 @@ defmodule Portico.Protocol.ToolListingTest do
              "properties" => %{"value" => %{"type" => "string"}}
            }
 
-    assert [%{input_schema: %{type: "object"}}, _] = Portico.Server.tools(Server)
+    assert [%{input_schema: %{"type" => "object"}}, _] = Portico.Server.tools(Server)
   end
 
   test "an independent server with no tools returns an empty list" do
