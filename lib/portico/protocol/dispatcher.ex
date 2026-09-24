@@ -10,6 +10,7 @@ defmodule Portico.Protocol.Dispatcher do
   Processes a decoded protocol message through the current validation stages.
 
   Returns a JSON-ready reply or `:no_response` for a valid notification.
+  Optional application assigns are copied into the fresh request context.
   Envelope errors take precedence over request metadata errors. Notifications
   are ignored; no notification handlers are implemented yet.
 
@@ -17,13 +18,13 @@ defmodule Portico.Protocol.Dispatcher do
   `server/discover`, `tools/list`, and completed text `tools/call` are implemented.
   Discovery advertises basic tools support. Listing returns the whole
   static catalog in name order and issues no pagination cursors. This is an incremental
-  dispatcher, not a complete MCP implementation; HTTP, full metadata validation,
+  dispatcher, not a complete MCP implementation; full metadata validation,
   and schema validation are still pending. Test helpers use `call_tool_request/3`
   for the same validation and execution with exceptions left visible to tests.
   """
-  @spec dispatch(module(), term()) :: {:reply, map()} | :no_response
-  def dispatch(server, message) do
-    case prepare(message, %{}) do
+  @spec dispatch(module(), term(), map()) :: {:reply, map()} | :no_response
+  def dispatch(server, message, assigns \\ %{}) when is_map(assigns) do
+    case prepare(message, assigns) do
       {:ok, message, context} -> dispatch_method(server, message, context)
       :no_response -> :no_response
       {:error, reason} -> {:reply, Error.response(reason, readable_id(message))}
