@@ -77,7 +77,7 @@ defmodule Portico.Protocol.DispatcherTest do
   end
 
   test "unimplemented protocol methods return method not found" do
-    for method <- ["unknown/method", "guarded", "tools/call", "server/discover"] do
+    for method <- ["unknown/method", "guarded", "tools/call"] do
       assert Dispatcher.dispatch(Server, %{@request | "method" => method}) ==
                {:reply,
                 %{

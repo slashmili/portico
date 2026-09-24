@@ -1,7 +1,11 @@
 defmodule Portico.Protocol.Error do
   @moduledoc false
 
-  @type reason :: :invalid_request | :invalid_params | :method_not_found
+  @type reason ::
+          :invalid_request
+          | :invalid_params
+          | :method_not_found
+          | {:unsupported_protocol_version, String.t(), [String.t()]}
 
   @doc """
   Builds a JSON-ready error response for a validation or method lookup failure.
@@ -10,13 +14,13 @@ defmodule Portico.Protocol.Error do
   omitted from the response, as required by the targeted MCP revision. Invalid
   IDs must not be passed through; callers should use `nil` in that case.
 
-  Messages are fixed and contain no request payloads. These are protocol errors,
+  Messages are fixed. Version mismatch data contains only requested and supported
+  versions, not the complete request payload. These are protocol errors,
   not tool execution results. Notification suppression and HTTP status codes
   belong to the dispatcher and transport, respectively.
   """
   @spec response(reason(), String.t() | integer() | nil) :: map()
-  def response(reason, id \\ nil)
-      when reason in [:invalid_request, :invalid_params, :method_not_found] do
+  def response(reason, id \\ nil) do
     response = %{"jsonrpc" => "2.0", "error" => details(reason)}
 
     cond do
@@ -34,4 +38,12 @@ defmodule Portico.Protocol.Error do
   defp details(:invalid_request), do: %{"code" => -32600, "message" => "Invalid request"}
   defp details(:invalid_params), do: %{"code" => -32602, "message" => "Invalid params"}
   defp details(:method_not_found), do: %{"code" => -32601, "message" => "Method not found"}
+
+  defp details({:unsupported_protocol_version, requested, supported}) do
+    %{
+      "code" => -32022,
+      "message" => "Unsupported protocol version",
+      "data" => %{"requested" => requested, "supported" => supported}
+    }
+  end
 end

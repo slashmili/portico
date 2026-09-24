@@ -4,6 +4,8 @@ defmodule Portico.Protocol.Dispatcher do
   alias Portico.{Request, Result, Server}
   alias Portico.Protocol.{Error, Validation}
 
+  @supported_versions ["2026-07-28"]
+
   @doc """
   Processes a decoded protocol message through the current validation stages.
 
@@ -11,13 +13,15 @@ defmodule Portico.Protocol.Dispatcher do
   Envelope errors take precedence over request metadata errors. Notifications
   are ignored; no notification handlers are implemented yet.
 
-  No protocol request methods are implemented at this stage, so structurally
-  valid requests return Method not found. Version support checks and successful
-  method dispatch will be added before this becomes a complete MCP entry point.
-  Direct `call_tool/4` remains available for application tests.
+  Checks the protocol version on every request before method lookup. Currently
+  only `server/discover` is implemented. Its capabilities remain empty until
+  protocol tool listing and invocation are implemented. This is an incremental
+  dispatcher, not a complete MCP implementation; HTTP, full metadata validation,
+  and schema validation are still pending. Direct `call_tool/4` remains available
+  for application tests.
   """
   @spec dispatch(module(), term()) :: {:reply, map()} | :no_response
-  def dispatch(_server, message) do
+  def dispatch(server, message) do
     case Validation.envelope(message) do
       {:error, :invalid_request} ->
         {:reply, Error.response(:invalid_request, readable_id(message))}
@@ -30,10 +34,42 @@ defmodule Portico.Protocol.Dispatcher do
           {:error, :invalid_params} ->
             {:reply, Error.response(:invalid_params, request["id"])}
 
-          {:ok, _metadata} ->
-            {:reply, Error.response(:method_not_found, request["id"])}
+          {:ok, metadata} ->
+            version = metadata["io.modelcontextprotocol/protocolVersion"]
+
+            if version in @supported_versions do
+              dispatch_method(server, request)
+            else
+              reason = {:unsupported_protocol_version, version, @supported_versions}
+              {:reply, Error.response(reason, request["id"])}
+            end
         end
     end
+  end
+
+  defp dispatch_method(server, %{"method" => "server/discover", "id" => id}) do
+    info = Server.info(server)
+
+    {:reply,
+     %{
+       "jsonrpc" => "2.0",
+       "id" => id,
+       "result" => %{
+         "resultType" => "complete",
+         "supportedVersions" => @supported_versions,
+         "capabilities" => %{},
+         "_meta" => %{
+           "io.modelcontextprotocol/serverInfo" => %{
+             "name" => info.name,
+             "version" => info.version
+           }
+         }
+       }
+     }}
+  end
+
+  defp dispatch_method(_server, request) do
+    {:reply, Error.response(:method_not_found, request["id"])}
   end
 
   defp readable_id(%{"id" => id}) when is_integer(id), do: id
