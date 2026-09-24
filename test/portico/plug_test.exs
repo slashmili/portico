@@ -1,7 +1,9 @@
 defmodule Portico.PlugTest do
   use ExUnit.Case, async: true
+  @moduletag capture_log: true
   import Plug.Conn
   import Plug.Test
+  import ExUnit.CaptureLog
 
   # Exercise adapter outcomes that Plug.Test's in-memory reader cannot produce.
   defmodule BodyAdapter do
@@ -260,6 +262,66 @@ defmodule Portico.PlugTest do
     end
   end
 
+  test "uses Logger's level to suppress debug requests" do
+    # A process-local threshold exercises Logger filtering without changing
+    # application-wide configuration during concurrent tests.
+    Logger.put_process_level(self(), :info)
+
+    try do
+      assert capture_log(fn -> assert run(post(message())).status == 200 end) == ""
+    after
+      Logger.delete_process_level(self())
+    end
+  end
+
+  test "logs raw and parser-decoded requests with recursive parameter filtering" do
+    arguments = %{
+      "text" => "visible",
+      "Password" => "password-value",
+      "nested" => [%{"access_token" => "token-value", "email" => "email-value"}],
+      "api_key" => "key-value"
+    }
+
+    body = put_in(message(), ["params", "arguments"], arguments)
+    parsers = Plug.Parsers.init(parsers: [:json], json_decoder: JSON)
+
+    for conn <- [post(body), post(body) |> Plug.Parsers.call(parsers)] do
+      conn = conn |> assign(:observer, self()) |> assign(:private, "assign-value")
+
+      log =
+        capture_log(fn ->
+          response =
+            run(conn, filter_parameters: ["EMAIL", "text"], assigns: [:observer])
+
+          assert response.status == 200
+
+          assert JSON.decode!(response.resp_body)["result"]["content"] ==
+                   [%{"type" => "text", "text" => "visible"}]
+        end)
+
+      assert log =~ "[debug]"
+      assert log =~ ~s|Processing MCP "tools/call" (id=7)|
+      assert log =~ "Parameters:"
+      refute log =~ "visible"
+      assert log =~ "[FILTERED]"
+
+      for secret <- ["password-value", "token-value", "email-value", "key-value", "assign-value"] do
+        refute log =~ secret
+      end
+
+      assert_received {:called, _request}
+    end
+  end
+
+  test "logs at debug without extra options and skips malformed envelopes" do
+    log = capture_log(fn -> assert run(post(message())).status == 200 end)
+    assert log =~ "[debug]"
+
+    assert capture_log(fn ->
+             error(run(post(%{"method" => "tools/call"})), 400, -32600)
+           end) == ""
+  end
+
   test "validates configuration at initialization" do
     for options <- [
           [],
@@ -267,7 +329,11 @@ defmodule Portico.PlugTest do
           [server: Server, allowed_origins: "*"],
           [server: Server, assigns: ["user"]],
           [server: Server, max_body_bytes: 0],
-          [server: Server, typo: true]
+          [server: Server, typo: true],
+          [server: Server, log: :debug],
+          [server: Server, filter_parameters: "password"],
+          [server: Server, filter_parameters: [:email]],
+          [server: Server, filter_parameters: [""]]
         ] do
       assert_raise ArgumentError, fn -> Portico.Plug.init(options) end
     end

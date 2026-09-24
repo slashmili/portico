@@ -1,5 +1,9 @@
 import Config
 
+if config_env() == :dev do
+  config :logger, level: :debug
+end
+
 config :portico_example,
   start_server: config_env() != :test,
   port: String.to_integer(System.get_env("PORT", "4000")),

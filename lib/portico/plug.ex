@@ -20,6 +20,17 @@ defmodule Portico.Plug do
     * `:assigns` — atom keys to copy from `conn.assigns` into each fresh
       `Portico.Request`, default `[]`. Run authentication plugs before this plug.
     * `:max_body_bytes` — raw JSON body limit, default 1,000,000 bytes.
+    * `:filter_parameters` — additional parameter key fragments to redact in
+      logs, default `[]`. Matching is case-insensitive and recursive through
+      maps and lists. Keys containing `password`, `secret`, `token`,
+      `authorization`, or `api_key` are always replaced with `"[FILTERED]"`.
+      This filters by key, not by value; add fragments for application secrets.
+
+  MCP requests are logged at `:debug`; the application's Logger level controls
+  visibility. Set `config :logger, level: :info` to hide these debug logs.
+  Logging covers requests with valid envelopes and required metadata, for both
+  raw and parsed bodies. It does not log headers, assigns, or results and never
+  modifies tool arguments. Keep `Plug.Logger` in the host for HTTP summaries.
 
   Supports raw bodies and JSON bodies decoded by `Plug.Parsers`. When a parser
   runs first, configure its size limit and error handling upstream; this plug
@@ -37,6 +48,7 @@ defmodule Portico.Plug do
 
   @behaviour Plug
   import Plug.Conn
+  require Logger
   alias Portico.Protocol.{Dispatcher, Error, Validation}
   alias Portico.Transport.Headers
 
@@ -47,7 +59,8 @@ defmodule Portico.Plug do
         server: nil,
         allowed_origins: [],
         assigns: [],
-        max_body_bytes: 1_000_000
+        max_body_bytes: 1_000_000,
+        filter_parameters: []
       )
 
     server = options[:server]
@@ -65,7 +78,21 @@ defmodule Portico.Plug do
     unless is_integer(options[:max_body_bytes]) and options[:max_body_bytes] > 0,
       do: raise(ArgumentError, "expected :max_body_bytes to be a positive integer")
 
-    Map.new(options)
+    unless is_list(options[:filter_parameters]) and
+             Enum.all?(
+               options[:filter_parameters],
+               &(is_binary(&1) and &1 != "" and String.valid?(&1))
+             ),
+           do:
+             raise(
+               ArgumentError,
+               "expected :filter_parameters to be a list of nonempty UTF-8 strings"
+             )
+
+    filters =
+      ["password", "secret", "token", "authorization", "api_key"] ++ options[:filter_parameters]
+
+    options |> Map.new() |> Map.put(:filter_parameters, Enum.map(filters, &String.downcase/1))
   end
 
   @impl true
@@ -162,6 +189,7 @@ defmodule Portico.Plug do
     header_check =
       with {:ok, :request, request} <- Validation.envelope(message),
            {:ok, _metadata} <- Validation.request_metadata(Map.get(request, "params", %{})) do
+        log_request(request, options)
         Headers.validate(conn.req_headers, request)
       end
 
@@ -178,6 +206,33 @@ defmodule Portico.Plug do
         end
     end
   end
+
+  defp log_request(request, options) do
+    Logger.debug(fn ->
+      params = filter_parameters(request["params"], options.filter_parameters)
+
+      "Processing MCP #{inspect(request["method"])} (id=#{inspect(request["id"])})\n" <>
+        "  Parameters: #{inspect(params)}"
+    end)
+  end
+
+  defp filter_parameters(value, filters) when is_map(value) and not is_struct(value) do
+    Map.new(value, fn {key, value} ->
+      filtered =
+        if is_binary(key) and String.contains?(String.downcase(key), filters) do
+          "[FILTERED]"
+        else
+          filter_parameters(value, filters)
+        end
+
+      {key, filtered}
+    end)
+  end
+
+  defp filter_parameters(value, filters) when is_list(value),
+    do: Enum.map(value, &filter_parameters(&1, filters))
+
+  defp filter_parameters(value, _filters), do: value
 
   defp reply(conn, response) do
     status =

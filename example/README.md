@@ -24,9 +24,25 @@ The router runs `Plug.Logger` before routing, logging each request at info level
 [info] Sent 200 in 2ms
 ```
 
-These are HTTP request logs: method, path, response status, and duration.
-They do not include MCP tool arguments or results. Restart `mix run --no-halt`
-after code changes to load them.
+Portico logs the decoded MCP method, request ID, and parameters at debug level,
+including tool arguments. Visibility follows the application's Logger level:
+
+```text
+[debug] Processing MCP "tools/call" (id=1)
+  Parameters: %{"_meta" => ..., "arguments" => %{"a" => 2, "b" => 3}, "name" => "add"}
+```
+
+Debug logging is explicitly enabled in development. Set the Logger level to
+`config :logger, level: :info` to keep only the HTTP summaries. There is no
+separate logging option on `Portico.Plug`.
+Portico logs both raw and already-parsed requests; no extra parser is needed.
+Results, headers, and assigns are not logged.
+
+Parameter keys containing `password`, `secret`, `token`, `authorization`, or
+`api_key` are redacted recursively, ignoring case. Extend these defaults with
+`filter_parameters: ["email", "credential"]` in the Plug options. Filtering only
+changes log output; tool callbacks receive the original arguments.
+Restart `mix run --no-halt` after code changes to load them.
 
 The listener binds only to loopback. To use another port:
 
