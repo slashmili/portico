@@ -54,6 +54,18 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIsInstance(result.content[0], TextContent)
                         self.assertEqual(result.content[0].text, expected)
 
+    async def test_add_invalid_inputs(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
+                for arguments in [{}, {"a": "2", "b": 3}, {"a": 2, "b": 3, "extra": True}]:
+                    with self.subTest(arguments=arguments):
+                        result = await client.call_tool("add", arguments)
+                        self.assertTrue(result.is_error)
+                        self.assertEqual(len(result.content), 1)
+                        self.assertIsInstance(result.content[0], TextContent)
+                        self.assertEqual(result.content[0].text, "Provide exactly two integers, a and b.")
+
 
 if __name__ == "__main__":
     unittest.main()

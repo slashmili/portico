@@ -9,14 +9,14 @@ defmodule Portico.ServerTest do
       input_schema: %{type: "object", properties: %{a: %{type: "number"}}}
 
     @impl true
-    def call(%{"a" => a}, request), do: {:reply, Portico.Result.text("#{a}"), request}
+    def call(%{"a" => a}, _request), do: {:ok, Portico.Result.text("#{a}")}
   end
 
   defmodule Zebra do
     use Portico.Tool, input_schema: %{"type" => "object"}
 
     @impl true
-    def call(_arguments, request), do: {:reply, Portico.Result.text("zebra"), request}
+    def call(_arguments, _request), do: {:ok, Portico.Result.text("zebra")}
   end
 
   defmodule Example do

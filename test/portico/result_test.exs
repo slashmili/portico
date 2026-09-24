@@ -28,4 +28,22 @@ defmodule Portico.ResultTest do
       Result.text(<<255>>)
     end
   end
+
+  test "error builds an explicit tool failure with text content" do
+    for text <- ["", "Unable to complete: Grüße\nTry again"] do
+      result = Result.error(text)
+      assert result.is_error == true
+      assert result.content == [%{type: "text", text: text}]
+    end
+
+    assert Result.text("ok").is_error == false
+  end
+
+  test "error rejects non-text values and invalid UTF-8" do
+    for value <- [nil, 42, :error, %{}] do
+      assert_raise FunctionClauseError, fn -> Result.error(value) end
+    end
+
+    assert_raise ArgumentError, fn -> Result.error(<<255>>) end
+  end
 end

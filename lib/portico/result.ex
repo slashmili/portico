@@ -5,14 +5,14 @@ defmodule Portico.Result do
   Content items use atom-keyed Elixir maps. Protocol encoding is a separate
   responsibility; this struct is not a JSON-RPC response.
 
-  Currently only text content is supported. Prefer `text/1` to construct a
-  validated text result.
+  Currently only text content is supported. Use `text/1` for success and
+  `error/1` for an expected tool failure with a client-facing explanation.
   """
 
-  defstruct content: []
+  defstruct content: [], is_error: false
 
   @type text_content :: %{type: String.t(), text: String.t()}
-  @type t :: %__MODULE__{content: [text_content()]}
+  @type t :: %__MODULE__{content: [text_content()], is_error: boolean()}
 
   @doc """
   Builds a result containing one text item.
@@ -33,5 +33,26 @@ defmodule Portico.Result do
     end
 
     %__MODULE__{content: [%{type: "text", text: text}]}
+  end
+
+  @doc """
+  Builds a completed tool error containing one UTF-8 text item.
+
+  Return it through the usual `{:ok, result}` callback. The client
+  receives `isError: true` in a completed result (HTTP 200), rather than a
+  JSON-RPC protocol error. Use a message the client can act on; unexpected
+  callback exceptions still become sanitized protocol errors.
+
+  Accepts the same text values as `text/1`, including an empty string.
+
+  ## Examples
+
+      iex> result = Portico.Result.error("Choose a date in the future.")
+      iex> result.is_error
+      true
+  """
+  @spec error(String.t()) :: t()
+  def error(message) when is_binary(message) do
+    %{text(message) | is_error: true}
   end
 end

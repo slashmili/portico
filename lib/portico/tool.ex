@@ -12,8 +12,8 @@ defmodule Portico.Tool do
           }
 
         @impl true
-        def call(%{"a" => a, "b" => b}, request) do
-          {:reply, Portico.Result.text("#{a + b}"), request}
+        def call(%{"a" => a, "b" => b}, _request) do
+          {:ok, Portico.Result.text("#{a + b}")}
         end
       end
 
@@ -25,13 +25,24 @@ defmodule Portico.Tool do
   Schema. Every tool must implement a public `call/2` callback. Use
   `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
   the callback's return shape. Protocol calls also validate envelopes and core
-  metadata and encode completed text results. HTTP and schema validation are
-  not implemented yet.
+  metadata and encode completed text results. `Portico.Plug` serves HTTP requests;
+  schema validation is not implemented yet.
+
+  The request supplies assigns and client metadata; callbacks do not return it.
+  `:ok` means a result was produced. The result's `is_error` flag distinguishes
+  successful execution from an expected tool failure.
+
+  Expected tool failures use the same callback shape:
+
+      {:ok, Portico.Result.error("Provide a valid date.")}
+
+  This returns a completed result with `isError: true`. Unexpected callback
+  exceptions remain generic protocol errors over HTTP and propagate in tests.
   """
 
   @doc "Handles tool arguments with application context and returns a completed result."
   @callback call(map(), Portico.Request.t()) ::
-              {:reply, Portico.Result.t(), Portico.Request.t()}
+              {:ok, Portico.Result.t()}
 
   @doc false
   defmacro __using__(options) do

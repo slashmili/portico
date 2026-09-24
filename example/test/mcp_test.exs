@@ -12,4 +12,12 @@ defmodule PorticoExample.MCPTest do
       assert_text result, expected
     end
   end
+
+  test "invalid inputs return an actionable tool error", %{mcp: mcp} do
+    for arguments <- [%{}, %{"a" => "2", "b" => 3}, %{"a" => 2, "b" => 3, "extra" => true}] do
+      result = call_tool mcp, "add", arguments
+      assert result.is_error
+      assert_text result, "Provide exactly two integers, a and b."
+    end
+  end
 end

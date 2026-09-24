@@ -9,7 +9,12 @@ defmodule PorticoExample.Tools.Add do
     }
 
   @impl true
-  def call(%{"a" => a, "b" => b}, request) when is_integer(a) and is_integer(b) do
-    {:reply, Portico.Result.text(Integer.to_string(a + b)), request}
+  def call(%{"a" => a, "b" => b} = arguments, _request)
+      when is_integer(a) and is_integer(b) and map_size(arguments) == 2 do
+    {:ok, Portico.Result.text(Integer.to_string(a + b))}
+  end
+
+  def call(_arguments, _request) do
+    {:ok, Portico.Result.error("Provide exactly two integers, a and b.")}
   end
 end

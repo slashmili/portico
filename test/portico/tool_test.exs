@@ -20,7 +20,7 @@ defmodule Portico.ToolTest do
             quote do
               use Portico.Tool, unquote(Macro.escape(options))
               @impl true
-              def call(_arguments, request), do: {:reply, Portico.Result.text("ok"), request}
+              def call(_arguments, _request), do: {:ok, Portico.Result.text("ok")}
             end
           )
         end

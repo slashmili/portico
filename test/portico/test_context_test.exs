@@ -5,7 +5,7 @@ defmodule Portico.TestContextTest do
     @impl true
     def call(%{"text" => text}, request) do
       send(request.assigns.observer, {:context, request.assigns})
-      {:reply, Portico.Result.text(text), Portico.Request.assign(request, :changed, true)}
+      {:ok, Portico.Result.text(text)}
     end
   end
 
@@ -32,11 +32,11 @@ defmodule Portico.TestContextTest do
   test "per-call assigns override defaults without leaking into later calls", %{mcp: mcp} do
     call_tool mcp, "echo", %{"text" => "one"}, assigns: %{locale: "de"}
     assert_received {:context, %{locale: "de"} = first}
-    refute Map.has_key?(first, :changed)
+    assert first == %{observer: self(), locale: "de"}
 
     call_tool mcp, "echo", %{"text" => "two"}
     assert_received {:context, %{locale: "en"} = second}
-    refute Map.has_key?(second, :changed)
+    assert second == %{observer: self(), locale: "en"}
     assert mcp.assigns == %{observer: self(), locale: "en"}
   end
 
@@ -98,8 +98,8 @@ defmodule Portico.TestDefaultsTest do
     use Portico.Tool, input_schema: %{type: "object"}
 
     @impl true
-    def call(%{"a" => a, "b" => b}, request) do
-      {:reply, Portico.Result.text("#{a + b}"), request}
+    def call(%{"a" => a, "b" => b}, _request) do
+      {:ok, Portico.Result.text("#{a + b}")}
     end
   end
 

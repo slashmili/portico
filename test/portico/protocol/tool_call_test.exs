@@ -5,8 +5,8 @@ defmodule Portico.Protocol.ToolCallTest do
   defmodule Add do
     use Portico.Tool, input_schema: %{type: "object"}
     @impl true
-    def call(%{"a" => a, "b" => b}, request) do
-      {:reply, Portico.Result.text("#{a + b}"), request}
+    def call(%{"a" => a, "b" => b}, _request) do
+      {:ok, Portico.Result.text("#{a + b}")}
     end
   end
 
@@ -25,7 +25,7 @@ defmodule Portico.Protocol.ToolCallTest do
           "arguments" => arguments
         })
 
-      {:reply, Portico.Result.text(text), Portico.Request.assign(request, :changed, true)}
+      {:ok, Portico.Result.text(text)}
     end
   end
 
@@ -35,8 +35,12 @@ defmodule Portico.Protocol.ToolCallTest do
     def call(%{"raise" => true}, _), do: raise("secret application detail")
     def call(%{"shape" => true}, _), do: {:reply, "secret", %{}}
 
-    def call(%{"content" => content}, request) do
-      {:reply, %Portico.Result{content: content}, request}
+    def call(%{"flag" => flag}, _request) do
+      {:ok, Map.put(Portico.Result.text("private"), :is_error, flag)}
+    end
+
+    def call(%{"content" => content}, _request) do
+      {:ok, %Portico.Result{content: content}}
     end
   end
 
@@ -161,6 +165,13 @@ defmodule Portico.Protocol.ToolCallTest do
                   "id" => 7,
                   "error" => %{"code" => -32603, "message" => "Internal error"}
                 }}
+    end
+  end
+
+  test "rejects malformed error flags instead of emitting non-boolean isError" do
+    for flag <- [nil, "true", 1, %{}] do
+      assert {:reply, %{"error" => %{"code" => -32603}}} =
+               Dispatcher.dispatch(Server, request("broken", %{"flag" => flag}))
     end
   end
 

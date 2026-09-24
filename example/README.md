@@ -74,7 +74,8 @@ python3 -m venv .venv
 
 The suite pins the [official MCP SDK](https://pypi.org/project/mcp/2.2.0/) to
 `2.2.0`. It checks discovery, the advertised tool/schema, and `add` with positive,
-negative, and zero inputs through the SDK over HTTP. Each connection asserts
+negative, and zero inputs, plus expected errors for invalid inputs, through the
+SDK over HTTP. Each connection asserts
 protocol version `2026-07-28`; fallback to another version fails the test.
 No mocks or substituted protocol messages are used. Tests fail if the server is
 unavailable and have bounded timeouts.
@@ -108,6 +109,25 @@ mix format --check-formatted
 
 This is the first manual-testing checkpoint. Discovery, listing, and completed
 text tool calls work; streaming and elicitation are still pending. Schemas are
-advertised but not yet validated by Portico. The `add` callback accepts integers;
-invalid arguments currently produce a generic protocol error, not a friendly
-schema-validation result. Custom `Mcp-Param` annotations are also pending.
+advertised but not yet validated by Portico. The `add` callback explicitly checks
+for exactly two integer arguments and returns `Portico.Result.error/1` for invalid
+inputs. This is application validation, not a general JSON Schema validator.
+Custom `Mcp-Param` annotations are also pending.
+
+
+## Expected tool failures
+
+Callbacks always return `{:ok, %Portico.Result{}}`. The request is passed in for
+context but is not returned. `:ok` means the callback produced a result;
+`result.is_error` says whether the tool succeeded. For an expected failure:
+
+```elixir
+{:ok, Portico.Result.error("Provide exactly two integers, a and b.")}
+```
+
+After restarting the example, call `add` with `{"a": "2", "b": 3}` to try it.
+The response is HTTP 200 with a completed result and `isError: true`; the Python
+client exposes this as `result.is_error`. Unknown tools and malformed protocol
+requests still return JSON-RPC errors. Unexpected callback exceptions remain
+sanitized internal errors. Local tests can use `assert result.is_error` alongside
+`assert_text result, "..."`.

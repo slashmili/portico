@@ -108,9 +108,8 @@ defmodule Portico.Test do
   `ArgumentError`. Exceptions raised by the tool propagate to the test, while
   the protocol entry point converts them to a generic internal error.
 
-  Only `{:reply, %Portico.Result{}, %Portico.Request{}}` outcomes are supported.
-  The updated request is retained by the dispatcher; this helper returns only
-  the result.
+  Only `{:ok, %Portico.Result{}}` outcomes are supported. This helper returns
+  the result, including its `is_error` flag for expected tool failures.
   """
   @spec call_tool(module() | Context.t(), String.t(), map(), keyword()) :: Result.t()
   def call_tool(target, name, arguments, options \\ [])
@@ -139,7 +138,7 @@ defmodule Portico.Test do
     }
 
     case Dispatcher.call_tool_request(server, message, Map.merge(defaults, assigns)) do
-      {:reply, result, _request} -> result
+      {:ok, result} -> result
       {:error, :unknown_tool} -> raise ArgumentError, "unknown tool #{inspect(name)}"
       {:error, reason} -> raise ArgumentError, "invalid tool request: #{inspect(reason)}"
     end

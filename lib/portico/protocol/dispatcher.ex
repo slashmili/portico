@@ -37,7 +37,7 @@ defmodule Portico.Protocol.Dispatcher do
     case prepare(message, assigns) do
       {:ok, %{"method" => "tools/call", "params" => params}, context} ->
         case execute_call(server, params, context) do
-          {:reply, result, updated, _fields} -> {:reply, result, updated}
+          {:ok, result, _fields} -> {:ok, result}
           {:error, _reason} = error -> error
         end
 
@@ -119,7 +119,7 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
-      {:reply, _result, _updated_request, fields} ->
+      {:ok, _result, fields} ->
         complete(server, request.id, fields)
     end
   rescue
@@ -128,9 +128,9 @@ defmodule Portico.Protocol.Dispatcher do
 
   defp execute_call(server, params, request) do
     with {:ok, name, arguments} <- Validation.tool_call(params),
-         {:reply, result, updated} <- call_tool(server, name, arguments, request) do
+         {:ok, result} <- call_tool(server, name, arguments, request) do
       case Encoder.tool_result(result) do
-        {:ok, fields} -> {:reply, result, updated, fields}
+        {:ok, fields} -> {:ok, result, fields}
         {:error, :invalid_result} -> raise ArgumentError, "invalid tool result content"
       end
     end
@@ -174,7 +174,7 @@ defmodule Portico.Protocol.Dispatcher do
   defp readable_id(_message), do: nil
 
   @spec call_tool(module(), String.t(), map(), Request.t()) ::
-          {:reply, Result.t(), Request.t()} | {:error, :unknown_tool}
+          {:ok, Result.t()} | {:error, :unknown_tool}
   def call_tool(server, name, arguments, %Request{} = request) when is_binary(name) do
     unless is_map(arguments) and not is_struct(arguments) do
       raise ArgumentError, "expected tool arguments to be a plain map"
@@ -186,13 +186,13 @@ defmodule Portico.Protocol.Dispatcher do
 
       %{module: module} ->
         case module.call(arguments, request) do
-          {:reply, %Result{}, %Request{}} = reply ->
+          {:ok, %Result{}} = reply ->
             reply
 
           _other ->
             raise ArgumentError,
                   "invalid return from #{inspect(module)}.call/2; " <>
-                    "expected {:reply, %Portico.Result{}, %Portico.Request{}}"
+                    "expected {:ok, %Portico.Result{}}"
         end
     end
   end

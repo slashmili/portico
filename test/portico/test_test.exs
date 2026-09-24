@@ -13,9 +13,9 @@ defmodule Portico.TestTest do
       }
 
     @impl true
-    def call(%{"a" => a, "b" => b}, %Request{assigns: assigns} = request)
+    def call(%{"a" => a, "b" => b}, %Request{assigns: assigns})
         when map_size(assigns) == 0 do
-      {:reply, Result.text("#{a + b}"), request}
+      {:ok, Result.text("#{a + b}")}
     end
   end
 
@@ -25,7 +25,7 @@ defmodule Portico.TestTest do
     @impl true
     def call(arguments, request) do
       send(request.assigns.observer, {:called, arguments, request})
-      {:reply, Result.text("ok"), Request.assign(request, :called, true)}
+      {:ok, Result.text("ok")}
     end
   end
 
@@ -111,18 +111,17 @@ defmodule Portico.TestTest do
     result = %Result{content: [%{type: "text", text: 42}]}
 
     assert_raise ArgumentError, ~r/invalid tool result content/, fn ->
-      call_tool Server, "broken", %{"return" => {:reply, result, %Request{}}}
+      call_tool Server, "broken", %{"return" => {:ok, result}}
     end
   end
 
-  test "the shared dispatcher preserves the request returned by the callback" do
+  test "the shared dispatcher passes context in and returns only the result" do
     request = %Request{assigns: %{observer: self()}}
 
-    assert {:reply, result, updated} =
+    assert {:ok, result} =
              Portico.Protocol.Dispatcher.call_tool(Server, "observe", %{}, request)
 
     assert result == Result.text("ok")
-    assert updated.assigns == %{observer: self(), called: true}
     assert_received {:called, %{}, ^request}
   end
 
@@ -137,7 +136,10 @@ defmodule Portico.TestTest do
   test "invalid callback return shapes fail without printing their payloads" do
     for reply <- [
           :ok,
-          {:reply, "secret", %Request{}},
+          {:ok, "secret"},
+          {:error, "secret"},
+          {:ok, Result.text("secret"), %Request{}},
+          {:reply, Result.text("secret"), %Request{}},
           {:reply, Result.text("secret"), %{}},
           {:stream, "secret", %Request{}}
         ] do
@@ -146,7 +148,7 @@ defmodule Portico.TestTest do
           call_tool(Server, "broken", %{"return" => reply})
         end
 
-      assert error.message =~ "expected {:reply, %Portico.Result{}, %Portico.Request{}}"
+      assert error.message =~ "expected {:ok, %Portico.Result{}}"
       refute error.message =~ "secret"
     end
   end

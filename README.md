@@ -18,7 +18,8 @@ See the [runnable example](example/README.md) for a complete tool, a local Bandi
 server, and real HTTP tests using the official Python MCP client.
 
 Current support: discovery, tool listing, and completed text tool calls through
-`Portico.Plug`. Schema validation, streaming, and elicitation remain in progress.
+`Portico.Plug`, including explicit tool errors with `Portico.Result.error/1`.
+Schema validation, streaming, and elicitation remain in progress.
 
 Run library checks with:
 

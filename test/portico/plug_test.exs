@@ -19,10 +19,14 @@ defmodule Portico.PlugTest do
   defmodule Echo do
     use Portico.Tool, input_schema: %{type: "object"}
     @impl true
+    def call(%{"fail" => true}, _request) do
+      {:ok, Portico.Result.error("Try another value")}
+    end
+
     def call(arguments, request) do
       if pid = request.assigns[:observer], do: send(pid, {:called, request})
       if arguments["raise"], do: raise("private detail")
-      {:reply, Portico.Result.text(arguments["text"] || "hello"), request}
+      {:ok, Portico.Result.text(arguments["text"] || "hello")}
     end
   end
 
@@ -207,6 +211,17 @@ defmodule Portico.PlugTest do
     end
 
     refute_received {:called, _}
+  end
+
+  test "expected tool failures are completed results with HTTP 200" do
+    result = message() |> put_in(["params", "arguments"], %{"fail" => true}) |> post() |> run()
+    assert result.status == 200
+    response = JSON.decode!(result.resp_body)
+    refute Map.has_key?(response, "error")
+    assert response["id"] == 7
+    assert response["result"]["resultType"] == "complete"
+    assert response["result"]["isError"] == true
+    assert response["result"]["content"] == [%{"type" => "text", "text" => "Try another value"}]
   end
 
   test "maps protocol errors to HTTP statuses" do
