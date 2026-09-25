@@ -1,5 +1,6 @@
 defmodule Portico.Protocol.Dispatcher do
   @moduledoc false
+  require Logger
 
   alias Portico.{Request, Result, Schema, Server}
   alias Portico.Protocol.{Encoder, Error, Validation}
@@ -41,6 +42,7 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, %{"method" => "tools/call", "params" => params}, context} ->
         case execute_call(server, params, context) do
           {:ok, result, _fields} -> {:ok, result}
+          {:callback_error, reason} -> {:error, reason}
           {:stream, _} = stream -> stream
           {:error, _reason} = error -> error
         end
@@ -124,6 +126,10 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
+      {:callback_error, reason} ->
+        Logger.error(fn -> "Portico tool callback failed: #{inspect(reason)}" end)
+        {:reply, Error.response(:internal_error, request.id)}
+
       {:error, _reason} ->
         {:reply, Error.response(:internal_error, request.id)}
 
@@ -139,7 +145,7 @@ defmodule Portico.Protocol.Dispatcher do
 
   defp execute_call(server, params, request) do
     with {:ok, name, arguments} <- Validation.tool_call(params),
-         {:ok, result} <- call_tool(server, name, arguments, request) do
+         {:ok, result} <- invoke_tool(server, name, arguments, request) do
       case Encoder.tool_result(result) do
         {:ok, fields} -> {:ok, result, fields}
         {:error, _reason} = error -> error
@@ -186,11 +192,14 @@ defmodule Portico.Protocol.Dispatcher do
   defp readable_id(_message), do: nil
 
   @spec call_tool(module(), String.t(), map(), Request.t()) ::
-          {:ok, Result.t()} | {:stream, map()} | {:error, atom()}
+          {:ok, Result.t()} | {:stream, map()} | {:error, term()}
   def call_tool(server, name, arguments, %Request{} = request) do
     with {:ok, name, arguments} <-
            Validation.tool_call(%{"name" => name, "arguments" => arguments}) do
-      invoke_tool(server, name, arguments, request)
+      case invoke_tool(server, name, arguments, request) do
+        {:callback_error, reason} -> {:error, reason}
+        outcome -> outcome
+      end
     end
   end
 
@@ -207,6 +216,9 @@ defmodule Portico.Protocol.Dispatcher do
             case module.call(arguments, request) do
               {:ok, %Result{}} = reply ->
                 reply
+
+              {:error, reason} ->
+                {:callback_error, reason}
 
               {:noreply, data, :stream} ->
                 if function_exported?(module, :handle_stream, 2) do

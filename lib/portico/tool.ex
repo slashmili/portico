@@ -58,6 +58,12 @@ defmodule Portico.Tool do
   This returns a completed result with `isError: true`. Unexpected callback
   exceptions remain generic protocol errors over HTTP and propagate in tests.
 
+  Callbacks may return `{:error, reason}` when no result could be built.
+  `Portico.Test.call_tool` preserves the reason; HTTP logs it server-side and
+  sends a generic internal error. Use `Result.error/1` for client-visible tool
+  failures instead. Reasons may be any Elixir term; avoid secrets in reasons
+  because they appear in server logs.
+
   For streaming, return `{:noreply, data, :stream}` from `call/2` and implement
   the optional `handle_stream/2` callback:
 
@@ -75,18 +81,19 @@ defmodule Portico.Tool do
   as `stream.request`. No GenServer, permanent tool process, or session is created.
   The data is an ordinary Elixir value and is not serialized or retained for retries.
 
-  The callback must return `{:ok, %Portico.Result{}}`, including for expected
-  failures. It cannot start another stream. Portico stops its task on timeout
-  or detected disconnect. Detached work started by application code is outside
+  The callback returns `{:ok, %Portico.Result{}}`, including for expected tool
+  failures, or `{:error, reason}` when it cannot produce a result. It cannot start
+  another stream. Portico stops its task on timeout or detected disconnect. Detached work started by application code is outside
   this task's lifetime; cancellation does not undo effects already performed.
   """
 
   @doc "Handles tool arguments and chooses an immediate result or streaming work."
   @callback call(map(), Portico.Request.t()) ::
-              {:ok, Portico.Result.t()} | {:noreply, term(), :stream}
+              {:ok, Portico.Result.t()} | {:error, term()} | {:noreply, term(), :stream}
 
   @doc "Runs request-scoped streaming work and returns the final result."
-  @callback handle_stream(term(), Portico.Stream.t()) :: {:ok, Portico.Result.t()}
+  @callback handle_stream(term(), Portico.Stream.t()) ::
+              {:ok, Portico.Result.t()} | {:error, term()}
   @optional_callbacks handle_stream: 2
 
   @doc false

@@ -132,7 +132,6 @@ defmodule Portico.TestTest do
     for reply <- [
           :ok,
           {:ok, "secret"},
-          {:error, "secret"},
           {:ok, Result.text("secret"), %Request{}},
           {:reply, Result.text("secret"), %Request{}},
           {:reply, Result.text("secret"), %{}},

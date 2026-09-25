@@ -1,5 +1,6 @@
 defmodule Portico.Transport.SSE do
   @moduledoc false
+  require Logger
   import Plug.Conn
   alias Portico.Protocol.{Dispatcher, Encoder, Error}
   alias Portico.Stream.Runner
@@ -45,7 +46,8 @@ defmodule Portico.Transport.SSE do
 
             finish(conn, response)
 
-          {:error, _reason, conn} ->
+          {:error, reason, conn} ->
+            Logger.error(fn -> "Portico stream failed: #{inspect(reason)}" end)
             finish(conn, Error.response(:internal_error, execution.request.id))
 
           {:failed, _kind, _reason, _stack, conn} ->

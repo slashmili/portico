@@ -152,6 +152,14 @@ sanitized internal errors. Local tests can use `assert result.is_error` alongsid
 `assert_text result, "..."`.
 
 
+Callback failures that cannot produce a result may return `{:error, reason}`.
+The test helper preserves that reason for both immediate and streaming calls.
+HTTP logs the reason server-side and sends a generic internal error (HTTP 500
+for an immediate reply, or a final JSON-RPC error inside an already-open SSE
+response). Use `Result.error/1` for expected, client-visible tool failures.
+Avoid secrets in callback error reasons because they appear in server logs.
+
+
 ## Build a result incrementally
 
 `text/2` appends content in order and `put_error/2` sets or clears the error flag:
@@ -241,7 +249,7 @@ case Portico.Stream.send(stream, {:progress, current, total: to}) do
 end
 ```
 
-The callback always finishes with `{:ok, result}`;
+The callback finishes with `{:ok, result}` or `{:error, reason}`;
 `Portico.Result.error/1` works here too.
 
 After restarting the example, watch the SSE events with curl:

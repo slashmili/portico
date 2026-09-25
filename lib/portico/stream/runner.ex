@@ -24,6 +24,9 @@ defmodule Portico.Stream.Runner do
                 {:error, _reason} = error -> error
               end
 
+            {:error, _reason} = error ->
+              error
+
             _ ->
               {:error, :invalid_callback_return}
           end

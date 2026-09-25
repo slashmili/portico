@@ -108,6 +108,8 @@ defmodule Portico.Test do
   `:unknown_tool`, `:invalid_params`, `:invalid_callback_return`, `:invalid_result`,
   or `:missing_stream_callback`. Invalid helper configuration also returns a
   reason such as `:invalid_options`, `:invalid_assigns`, or `:invalid_server`.
+  Callback `{:error, reason}` returns are preserved, including arbitrary reason
+  terms, for both immediate and streaming calls.
   Application callback exceptions still propagate to the test, while HTTP
   converts them to a generic internal error. Failed assertions still raise.
 

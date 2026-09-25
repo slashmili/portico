@@ -18,6 +18,9 @@ defmodule Portico.StreamTest do
       if observer = stream.request.assigns[:observer], do: send(observer, {:worker, self()})
 
       case arguments["mode"] do
+        "callback_error" ->
+          {:error, {:invalid_text, "private detail"}}
+
         "bad_message" ->
           observe_send(stream, Stream.send(stream, arguments["message"]))
 
@@ -188,6 +191,22 @@ defmodule Portico.StreamTest do
       assert List.last(events(conn))["error"]["code"] == -32603
       refute conn.resp_body =~ "private"
     end
+  end
+
+  test "stream callback error reasons survive helper calls and stay out of HTTP responses" do
+    assert call_tool(Server, "work", %{"mode" => "callback_error"}) ==
+             {:error, {:invalid_text, "private detail"}}
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        conn = http(message(%{"mode" => "callback_error"}))
+        assert [final] = events(conn)
+        assert final["error"] == %{"code" => -32603, "message" => "Internal error"}
+        refute conn.resp_body =~ "private detail"
+      end)
+
+    assert log =~ "Portico stream failed"
+    assert log =~ "invalid_text"
   end
 
   test "expected stream errors remain completed tool results" do

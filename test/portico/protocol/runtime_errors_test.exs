@@ -1,5 +1,7 @@
 defmodule Portico.Protocol.RuntimeErrorsTest do
   use ExUnit.Case, async: true
+  import ExUnit.CaptureLog
+  @moduletag capture_log: true
   alias Portico.{Request, Result}
   alias Portico.Protocol.{Dispatcher, Encoder}
   alias Portico.Stream.Runner
@@ -60,6 +62,23 @@ defmodule Portico.Protocol.RuntimeErrorsTest do
 
     assert Dispatcher.call_tool_request(Server, message("missing", %{}), %{}) ==
              {:error, :missing_stream_callback}
+  end
+
+  test "callback errors preserve their reason but never become client validation errors" do
+    for reason <- [:invalid_text, :invalid_params, :unknown_tool, {:private, "detail"}] do
+      args = %{"reply" => {:error, reason}}
+      assert Dispatcher.call_tool(Server, "work", args, %Request{}) == {:error, reason}
+      assert Portico.Test.call_tool(Server, "work", args) == {:error, reason}
+
+      log =
+        capture_log(fn ->
+          assert {:reply, %{"error" => %{"code" => -32603, "message" => "Internal error"}}} =
+                   Dispatcher.dispatch(Server, message("work", args))
+        end)
+
+      assert log =~ "Portico tool callback failed"
+      assert log =~ inspect(reason)
+    end
   end
 
   test "direct invocation and encoding reject bad input without exceptions" do
