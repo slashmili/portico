@@ -49,9 +49,54 @@ defmodule Portico.InputTest do
           %{type: "number", enum: [1, 2]},
           %{type: "string", enum: ["red"], default: "blue"},
           %{type: "string", enum: ["red"], minLength: 1},
-          %{type: "string", oneOf: [%{const: "red", title: "Red"}]}
+          %{type: "string", enum: ["red"], oneOf: [%{const: "red", title: "Red"}]}
         ] do
       assert Input.form("Choose", schema: %{type: "object", properties: %{color: field}}) ==
+               {:error, :invalid_schema}
+    end
+  end
+
+  test "labeled choices preserve constants, titles and valid defaults" do
+    choices = [%{const: "#ff0000", title: "Red"}, %{const: "#00ff00", title: "緑"}]
+
+    for field <- [
+          %{type: "string", oneOf: choices},
+          %{type: "string", oneOf: choices, default: "#00ff00"}
+        ] do
+      assert {:ok, form} =
+               Input.form("Color", schema: %{type: "object", properties: %{color: field}})
+
+      assert form.schema["properties"]["color"]["oneOf"] == [
+               %{"const" => "#ff0000", "title" => "Red"},
+               %{"const" => "#00ff00", "title" => "緑"}
+             ]
+    end
+  end
+
+  test "malformed labeled choices and invalid defaults return schema errors" do
+    for choices <- [
+          [],
+          "red",
+          [true],
+          [%{const: "red"}],
+          [%{title: "Red"}],
+          [%{const: 1, title: "One"}],
+          [%{const: "red", title: 1}],
+          [%{const: "red", title: <<255>>}],
+          [%{const: "red", title: "Red", description: "extra"}],
+          [%{const: "red", title: "Red"}, %{const: "red", title: "Another red"}]
+        ] do
+      assert Input.form("Color",
+               schema: %{type: "object", properties: %{color: %{type: "string", oneOf: choices}}}
+             ) == {:error, :invalid_schema}
+    end
+
+    for field <- [
+          %{type: "string", oneOf: [%{const: "red", title: "Red"}], default: "Red"},
+          %{type: "string", oneOf: [%{const: "red", title: "Red"}], minLength: 1},
+          %{type: "integer", oneOf: [%{const: 1, title: "One"}]}
+        ] do
+      assert Input.form("Color", schema: %{type: "object", properties: %{color: field}}) ==
                {:error, :invalid_schema}
     end
   end

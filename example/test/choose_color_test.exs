@@ -7,9 +7,14 @@ defmodule PorticoExample.ChooseColorTest do
 
   test "advertises choices and accepts each allowed color", %{mcp: mcp} do
     {:ok, form, state} = call_tool mcp, "choose_color", %{}
-    assert form.schema["properties"]["color"]["enum"] == ["red", "green", "blue"]
 
-    for color <- ["red", "green", "blue"] do
+    assert form.schema["properties"]["color"]["oneOf"] == [
+             %{"const" => "#ff0000", "title" => "Red"},
+             %{"const" => "#00ff00", "title" => "Green"},
+             %{"const" => "#0000ff", "title" => "Blue"}
+           ]
+
+    for color <- ["#ff0000", "#00ff00", "#0000ff"] do
       {:ok, result} =
         call_tool mcp, "choose_color", %{},
           request_state: state,
@@ -22,7 +27,7 @@ defmodule PorticoExample.ChooseColorTest do
   test "unknown colors cause the form to be requested again", %{mcp: mcp} do
     {:ok, form, state} = call_tool mcp, "choose_color", %{}
 
-    for content <- [%{}, %{"color" => "purple"}, %{"color" => 1}] do
+    for content <- [%{}, %{"color" => "purple"}, %{"color" => "Red"}, %{"color" => 1}] do
       assert {:ok, ^form, _state} =
                call_tool(mcp, "choose_color", %{},
                  request_state: state,

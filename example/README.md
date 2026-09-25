@@ -360,7 +360,7 @@ responsibilities; the custom verifier can enforce identity using fresh assigns.
 
 This first slice supports one form at a time with flat string, number, integer,
 and boolean fields. Single-choice string enums are also supported. URL forms, multiple selection,
-titled enum options, and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
+and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
 tool schemas. Clients without form capability receive a completed tool error.
 
 Direct tests can use the same retry flow:
@@ -417,7 +417,11 @@ elicitation verifier and leaves the greeting example unchanged.
       color: %{
         type: "string",
         title: "Choose a color",
-        enum: ["red", "green", "blue"]
+        oneOf: [
+        %{const: "#ff0000", title: "Red"},
+        %{const: "#00ff00", title: "Green"},
+        %{const: "#0000ff", title: "Blue"}
+      ]
       }
     },
     required: ["color"]
@@ -426,9 +430,15 @@ elicitation verifier and leaves the greeting example unchanged.
 {:ok, form, "choose-color:v1"}
 ```
 
-The client chooses how to display the choices. Portico validates the submitted
-value before calling `handle_input/3`; a value outside the enum requests the form
-again. Choices must be unique UTF-8 strings in a nonempty list. If you provide
-`default: "green"`, it must be one of those choices. Field `title` and
-`description` are supported; separate titles for individual options and multiple
-selection remain future work.
+The client displays labels such as “Red” and submits the corresponding constant
+`"#ff0000"`. Portico validates that value before calling `handle_input/3`; an
+unknown value or the label `"Red"` requests the form again.
+
+Use `oneOf` with a nonempty list of `%{const: value, title: label}` choices.
+Constants must be unique UTF-8 strings, and titles must be UTF-8 strings. An
+optional `default: "#00ff00"` must match a constant. Each choice supports exactly
+`const` and `title`; field-level `title` and `description` remain supported.
+
+For choices whose labels and values are identical, plain
+`enum: ["red", "green", "blue"]` still works. Use either `enum` or `oneOf`, not
+both on the same field. Multiple selection remains future work.

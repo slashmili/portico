@@ -10,7 +10,15 @@ defmodule PorticoExample.Tools.ChooseColor do
         schema: %{
           type: "object",
           properties: %{
-            color: %{type: "string", title: "Choose a color", enum: ["red", "green", "blue"]}
+            color: %{
+              type: "string",
+              title: "Choose a color",
+              oneOf: [
+                %{const: "#ff0000", title: "Red"},
+                %{const: "#00ff00", title: "Green"},
+                %{const: "#0000ff", title: "Blue"}
+              ]
+            }
           },
           required: ["color"]
         }

@@ -169,11 +169,15 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIn('"/to":', result.content[0].text)
 
     async def test_choose_color(self):
-        for color in ["red", "green", "blue"]:
+        for color in ["#ff0000", "#00ff00", "#0000ff"]:
             with self.subTest(color=color):
                 async def on_form(context, params):
                     field = params.requested_schema["properties"]["color"]
-                    self.assertEqual(field["enum"], ["red", "green", "blue"])
+                    self.assertEqual(field["oneOf"], [
+                        {"const": "#ff0000", "title": "Red"},
+                        {"const": "#00ff00", "title": "Green"},
+                        {"const": "#0000ff", "title": "Blue"},
+                    ])
                     self.assertEqual(field["title"], "Choose a color")
                     return ElicitResult(action="accept", content={"color": color})
 
@@ -184,7 +188,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(result.content[0].text, f"You chose {color}.")
 
     async def test_choose_color_rejects_unknown_choice(self):
-        answers = iter(["purple", "green"])
+        answers = iter(["purple", "Red", "#00ff00"])
         seen = []
 
         async def on_form(context, params):
@@ -194,8 +198,8 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
                 result = await client.call_tool("choose_color", {})
-                self.assertEqual(result.content[0].text, "You chose green.")
-                self.assertEqual(len(seen), 2)
+                self.assertEqual(result.content[0].text, "You chose #00ff00.")
+                self.assertEqual(len(seen), 3)
 
     async def test_choose_color_decline_cancel(self):
         for action, expected in [("decline", "No color selected."), ("cancel", "Cancelled.")]:

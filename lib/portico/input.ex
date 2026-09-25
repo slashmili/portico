@@ -4,7 +4,7 @@ defmodule Portico.Input do
 
   `form/2` validates and normalizes a flat JSON Schema with string, number,
   integer, or boolean fields, including single-choice string enums. Multiple
-  selection, titled enum options, nested objects, references, and URL mode are
+  selection, nested objects, references, and URL mode are
   not supported yet. Errors return tuples.
 
   Portico protects the form and application state in an expiring signed token.
@@ -23,6 +23,9 @@ defmodule Portico.Input do
   A single-choice field uses `type: "string", enum: ["red", "green", "blue"]`.
   Choices must be a nonempty list of unique UTF-8 strings. An optional default
   must be one of those choices. Use `title` and `description` to label the field.
+  Labeled choices use `oneOf: [%{const: "#ff0000", title: "Red"}, ...]`
+  instead of `enum`. Constants must be unique strings, each with a string title;
+  an optional default must match a constant, not its label.
   Invalid declarations return `{:error, :invalid_schema}`.
   """
   @spec form(String.t(), keyword()) :: {:ok, t()} | {:error, atom()}
@@ -61,6 +64,12 @@ defmodule Portico.Input do
       (not Map.has_key?(field, "default") or field["default"] in choices)
   end
 
+  defp supported_field?(%{"type" => "string", "oneOf" => choices} = field) do
+    is_list(choices) and choices != [] and Enum.all?(choices, &titled_choice?/1) and
+      Enum.all?(Map.keys(field), &(&1 in ["type", "oneOf", "title", "description", "default"])) and
+      unique_constants?(choices, field)
+  end
+
   defp supported_field?(%{"type" => type} = field) do
     specific =
       case type do
@@ -80,4 +89,16 @@ defmodule Portico.Input do
   end
 
   defp supported_field?(_field), do: false
+
+  defp titled_choice?(%{"const" => value, "title" => title} = choice),
+    do: map_size(choice) == 2 and is_binary(value) and is_binary(title)
+
+  defp titled_choice?(_choice), do: false
+
+  defp unique_constants?(choices, field) do
+    values = Enum.map(choices, & &1["const"])
+
+    length(Enum.uniq(values)) == length(values) and
+      (not Map.has_key?(field, "default") or field["default"] in values)
+  end
 end
