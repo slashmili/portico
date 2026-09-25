@@ -169,11 +169,15 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIn('"/to":', result.content[0].text)
 
     async def test_choose_colors(self):
-        for colors in [["red"], ["red", "blue"], ["blue", "green"]]:
+        for colors in [["#ff0000"], ["#ff0000", "#0000ff"], ["#0000ff", "#00ff00"]]:
             with self.subTest(colors=colors):
                 async def on_form(context, params):
                     field = params.requested_schema["properties"]["colors"]
-                    self.assertEqual(field["items"], {"type": "string", "enum": ["red", "green", "blue"]})
+                    self.assertEqual(field["items"], {"anyOf": [
+                        {"const": "#ff0000", "title": "Red"},
+                        {"const": "#00ff00", "title": "Green"},
+                        {"const": "#0000ff", "title": "Blue"},
+                    ]})
                     self.assertEqual((field["minItems"], field["maxItems"]), (1, 2))
                     return ElicitResult(action="accept", content={"colors": colors})
 
@@ -184,9 +188,9 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(result.content[0].text, f"You chose {', '.join(colors)}.")
 
     async def test_choose_colors_reasks_for_invalid_selection(self):
-        for invalid in [[], ["purple"], ["red", "green", "blue"], "red"]:
+        for invalid in [[], ["purple"], ["Red", "Blue"], ["#ff0000", "#00ff00", "#0000ff"], "red"]:
             with self.subTest(invalid=invalid):
-                answers = iter([invalid, ["green", "blue"]])
+                answers = iter([invalid, ["#00ff00", "#0000ff"]])
                 seen = []
 
                 async def on_form(context, params):
@@ -196,7 +200,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 async with asyncio.timeout(15):
                     async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
                         result = await client.call_tool("choose_colors", {})
-                        self.assertEqual(result.content[0].text, "You chose green, blue.")
+                        self.assertEqual(result.content[0].text, "You chose #00ff00, #0000ff.")
                         self.assertEqual(len(seen), 2)
 
     async def test_choose_colors_decline_cancel(self):

@@ -10,7 +10,13 @@ defmodule PorticoExample.ChooseColorsTest do
     assert form.schema["properties"]["colors"]["minItems"] == 1
     assert form.schema["properties"]["colors"]["maxItems"] == 2
 
-    for colors <- [["red"], ["red", "blue"], ["blue", "green"]] do
+    assert form.schema["properties"]["colors"]["items"]["anyOf"] == [
+             %{"const" => "#ff0000", "title" => "Red"},
+             %{"const" => "#00ff00", "title" => "Green"},
+             %{"const" => "#0000ff", "title" => "Blue"}
+           ]
+
+    for colors <- [["#ff0000"], ["#ff0000", "#0000ff"], ["#0000ff", "#00ff00"]] do
       {:ok, result} =
         call_tool mcp, "choose_colors", %{},
           request_state: state,
@@ -29,7 +35,8 @@ defmodule PorticoExample.ChooseColorsTest do
           %{},
           %{"colors" => []},
           %{"colors" => ["purple"]},
-          %{"colors" => ["red", "green", "blue"]},
+          %{"colors" => ["#ff0000", "#00ff00", "#0000ff"]},
+          %{"colors" => ["Red", "Blue"]},
           %{"colors" => "red"}
         ] do
       assert {:ok, ^form, _} =

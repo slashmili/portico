@@ -359,8 +359,8 @@ responsibilities; the custom verifier can enforce identity using fresh assigns.
 `requestState` is redacted from Portico's parameter logs.
 
 This first slice supports one form at a time with flat string, number, integer,
-and boolean fields. Single-choice string enums are also supported. Arrays of string enum choices support multiple selection. URL forms, labeled
-multiple-selection choices, and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
+and boolean fields. Single-choice string enums are also supported. Arrays of string enum choices support multiple selection, with optional labels.
+URL forms and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
 tool schemas. Clients without form capability receive a completed tool error.
 
 Direct tests can use the same retry flow:
@@ -455,16 +455,34 @@ colors: %{
   title: "Choose colors",
   minItems: 1,
   maxItems: 2,
-  items: %{type: "string", enum: ["red", "green", "blue"]}
+  items: %{
+    anyOf: [
+      %{const: "#ff0000", title: "Red"},
+      %{const: "#00ff00", title: "Green"},
+      %{const: "#0000ff", title: "Blue"}
+    ]
+  }
 }
 ```
 
-The callback receives a list such as `["red", "blue"]` in the client's order.
+The client displays color names; the callback receives constants such as
+`["#ff0000", "#0000ff"]` in the client's order.
 Unknown choices, too few/many choices, or a scalar value cause Portico to request
 the form again before calling `handle_input/3`. Array entries must be strings;
 nested arrays and objects are malformed replies. Decline and cancel work as usual.
 
 `minItems` and `maxItems` are optional nonnegative integers; the minimum cannot
 exceed the maximum. An optional default must be a list of allowed strings within
-those limits. This slice does not support titled choices inside arrays, nested
-arrays, or `uniqueItems`; it does not deduplicate submitted selections.
+those limits. For labeled options, defaults contain constants, not labels. The
+`items.anyOf` list must be nonempty, with unique string constants and string titles.
+Each choice contains exactly `const` and `title`; use `anyOf` for labeled arrays,
+not the `oneOf` used by single-choice fields.
+
+Plain `items: %{type: "string", enum: ["red", "green", "blue"]}` still works.
+Nested arrays and `uniqueItems` are not supported; submitted selections are not
+deduplicated.
+
+This completes the planned form scope for the first version: primitive fields,
+single and multiple selection with optional labels, and supported constraints.
+Further form extensions are deferred while we review first-version gaps and
+exercise real clients.

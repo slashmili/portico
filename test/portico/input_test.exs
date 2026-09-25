@@ -141,6 +141,61 @@ defmodule Portico.InputTest do
     end
   end
 
+  test "labeled multiple-choice options retain labels, constants and valid defaults" do
+    items = %{anyOf: [%{const: "#ff0000", title: "Red"}, %{const: "#00ff00", title: "緑"}]}
+
+    for extra <- [%{}, %{default: ["#ff0000", "#00ff00"]}, %{default: []}] do
+      field = Map.merge(%{type: "array", items: items, maxItems: 2}, extra)
+
+      assert {:ok, form} =
+               Input.form("Colors", schema: %{type: "object", properties: %{colors: field}})
+
+      assert form.schema["properties"]["colors"]["items"] == %{
+               "anyOf" => [
+                 %{"const" => "#ff0000", "title" => "Red"},
+                 %{"const" => "#00ff00", "title" => "緑"}
+               ]
+             }
+    end
+  end
+
+  test "labeled multiple-choice declarations reject malformed or ambiguous options" do
+    for items <- [
+          %{anyOf: []},
+          %{anyOf: "red"},
+          %{anyOf: [true]},
+          %{anyOf: [%{const: "red"}]},
+          %{anyOf: [%{const: 1, title: "One"}]},
+          %{anyOf: [%{const: "red", title: <<255>>}]},
+          %{anyOf: [%{const: "red", title: "Red"}, %{const: "red", title: "Again"}]},
+          %{anyOf: [%{const: "red", title: "Red", description: "extra"}]},
+          %{anyOf: [%{const: "red", title: "Red"}], type: "string"},
+          %{anyOf: [%{const: "red", title: "Red"}], enum: ["red"]},
+          %{type: "string", enum: [], anyOf: [%{const: "red", title: "Red"}]},
+          %{oneOf: [%{const: "red", title: "Red"}]}
+        ] do
+      assert Input.form("Colors",
+               schema: %{type: "object", properties: %{colors: %{type: "array", items: items}}}
+             ) == {:error, :invalid_schema}
+    end
+
+    items = %{anyOf: [%{const: "red", title: "Red"}]}
+
+    for extra <- [
+          %{default: ["Red"]},
+          %{default: ["blue"]},
+          %{default: "red"},
+          %{minItems: 1, default: []},
+          %{maxItems: 0, default: ["red"]},
+          %{minItems: 2, maxItems: 1}
+        ] do
+      field = Map.merge(%{type: "array", items: items}, extra)
+
+      assert Input.form("Colors", schema: %{type: "object", properties: %{colors: field}}) ==
+               {:error, :invalid_schema}
+    end
+  end
+
   test "invalid form declarations return errors" do
     for message <- [nil, 42, <<255>>],
         do: assert(Input.form(message, []) == {:error, :invalid_message})

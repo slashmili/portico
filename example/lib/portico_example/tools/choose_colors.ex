@@ -15,7 +15,13 @@ defmodule PorticoExample.Tools.ChooseColors do
               title: "Choose colors",
               minItems: 1,
               maxItems: 2,
-              items: %{type: "string", enum: ["red", "green", "blue"]}
+              items: %{
+                anyOf: [
+                  %{const: "#ff0000", title: "Red"},
+                  %{const: "#00ff00", title: "Green"},
+                  %{const: "#0000ff", title: "Blue"}
+                ]
+              }
             }
           },
           required: ["colors"]
