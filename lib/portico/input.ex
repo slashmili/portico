@@ -3,8 +3,9 @@ defmodule Portico.Input do
   A form requested by a tool with `{:ok, form, request_state}`.
 
   `form/2` validates and normalizes a flat JSON Schema with string, number,
-  integer, or boolean fields. This first slice excludes enum selectors, arrays,
-  nested objects, references, and URL mode. Errors return tuples.
+  integer, or boolean fields, including single-choice string enums. Multiple
+  selection, titled enum options, nested objects, references, and URL mode are
+  not supported yet. Errors return tuples.
 
   Portico protects the form and application state in an expiring signed token.
   Accepted answers are validated against that form before `handle_input/3` runs.
@@ -16,7 +17,14 @@ defmodule Portico.Input do
   @type t :: %__MODULE__{message: String.t(), schema: map()}
   @type answer :: {:accept, map()} | :decline | :cancel
 
-  @doc "Builds a form from a message and a required `schema:` option."
+  @doc """
+  Builds a form from a message and a required `schema:` option.
+
+  A single-choice field uses `type: "string", enum: ["red", "green", "blue"]`.
+  Choices must be a nonempty list of unique UTF-8 strings. An optional default
+  must be one of those choices. Use `title` and `description` to label the field.
+  Invalid declarations return `{:error, :invalid_schema}`.
+  """
   @spec form(String.t(), keyword()) :: {:ok, t()} | {:error, atom()}
   def form(message, options) do
     cond do
@@ -44,6 +52,13 @@ defmodule Portico.Input do
       Enum.all?(Map.keys(schema), &(&1 in ["type", "properties", "required"])) and
       Enum.all?(Map.get(schema, "required", []), &Map.has_key?(schema["properties"], &1)) and
       Enum.all?(schema["properties"], fn {_name, field} -> supported_field?(field) end)
+  end
+
+  defp supported_field?(%{"type" => "string", "enum" => choices} = field) do
+    is_list(choices) and choices != [] and Enum.all?(choices, &is_binary/1) and
+      length(Enum.uniq(choices)) == length(choices) and
+      Enum.all?(Map.keys(field), &(&1 in ["type", "enum", "title", "description", "default"])) and
+      (not Map.has_key?(field, "default") or field["default"] in choices)
   end
 
   defp supported_field?(%{"type" => type} = field) do

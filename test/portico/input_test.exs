@@ -16,6 +16,46 @@ defmodule Portico.InputTest do
     end
   end
 
+  test "string enums preserve choices, labels and valid defaults" do
+    field = %{
+      type: "string",
+      title: "Color",
+      description: "Pick one",
+      enum: ["red", "緑", "blue"],
+      default: "緑"
+    }
+
+    assert {:ok, form} =
+             Input.form("Choose",
+               schema: %{type: "object", properties: %{color: field}, required: ["color"]}
+             )
+
+    assert form.schema["properties"]["color"] == %{
+             "type" => "string",
+             "title" => "Color",
+             "description" => "Pick one",
+             "enum" => ["red", "緑", "blue"],
+             "default" => "緑"
+           }
+  end
+
+  test "invalid enum choices and defaults are rejected" do
+    for field <- [
+          %{type: "string", enum: []},
+          %{type: "string", enum: "red"},
+          %{type: "string", enum: ["red", "red"]},
+          %{type: "string", enum: ["red", 1]},
+          %{type: "string", enum: [<<255>>]},
+          %{type: "number", enum: [1, 2]},
+          %{type: "string", enum: ["red"], default: "blue"},
+          %{type: "string", enum: ["red"], minLength: 1},
+          %{type: "string", oneOf: [%{const: "red", title: "Red"}]}
+        ] do
+      assert Input.form("Choose", schema: %{type: "object", properties: %{color: field}}) ==
+               {:error, :invalid_schema}
+    end
+  end
+
   test "invalid form declarations return errors" do
     for message <- [nil, 42, <<255>>],
         do: assert(Input.form(message, []) == {:error, :invalid_message})

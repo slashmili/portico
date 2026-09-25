@@ -359,7 +359,8 @@ responsibilities; the custom verifier can enforce identity using fresh assigns.
 `requestState` is redacted from Portico's parameter logs.
 
 This first slice supports one form at a time with flat string, number, integer,
-and boolean fields. URL forms, enum selectors, and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
+and boolean fields. Single-choice string enums are also supported. URL forms, multiple selection,
+titled enum options, and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
 tool schemas. Clients without form capability receive a completed tool error.
 
 Direct tests can use the same retry flow:
@@ -400,3 +401,34 @@ submits the answer in a new POST with the original arguments and signed state.
 The same verifier, schema validation, and `handle_input/3` callbacks apply.
 The form is still delivered without a progress token; only progress notifications
 are omitted. A client without form capability receives a completed tool error.
+
+
+## Choose a color from a list
+
+Call `choose_color` with `{}` to try a single-choice enum form. This is a separate
+small example in `lib/portico_example/tools/choose_color.ex`; it uses the default
+elicitation verifier and leaves the greeting example unchanged.
+
+```elixir
+{:ok, form} = Portico.Input.form("Pick your preferred color.",
+  schema: %{
+    type: "object",
+    properties: %{
+      color: %{
+        type: "string",
+        title: "Choose a color",
+        enum: ["red", "green", "blue"]
+      }
+    },
+    required: ["color"]
+  })
+
+{:ok, form, "choose-color:v1"}
+```
+
+The client chooses how to display the choices. Portico validates the submitted
+value before calling `handle_input/3`; a value outside the enum requests the form
+again. Choices must be unique UTF-8 strings in a nonempty list. If you provide
+`default: "green"`, it must be one of those choices. Field `title` and
+`description` are supported; separate titles for individual options and multiple
+selection remain future work.
