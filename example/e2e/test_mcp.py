@@ -87,7 +87,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add", "choose_color", "count", "greet"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "choose_color", "choose_colors", "count", "greet"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)
@@ -167,6 +167,49 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         result = await client.call_tool("count", arguments)
                         self.assertTrue(result.is_error)
                         self.assertIn('"/to":', result.content[0].text)
+
+    async def test_choose_colors(self):
+        for colors in [["red"], ["red", "blue"], ["blue", "green"]]:
+            with self.subTest(colors=colors):
+                async def on_form(context, params):
+                    field = params.requested_schema["properties"]["colors"]
+                    self.assertEqual(field["items"], {"type": "string", "enum": ["red", "green", "blue"]})
+                    self.assertEqual((field["minItems"], field["maxItems"]), (1, 2))
+                    return ElicitResult(action="accept", content={"colors": colors})
+
+                async with asyncio.timeout(15):
+                    async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                        result = await client.call_tool("choose_colors", {})
+                        self.assertFalse(result.is_error)
+                        self.assertEqual(result.content[0].text, f"You chose {', '.join(colors)}.")
+
+    async def test_choose_colors_reasks_for_invalid_selection(self):
+        for invalid in [[], ["purple"], ["red", "green", "blue"], "red"]:
+            with self.subTest(invalid=invalid):
+                answers = iter([invalid, ["green", "blue"]])
+                seen = []
+
+                async def on_form(context, params):
+                    seen.append(params)
+                    return ElicitResult(action="accept", content={"colors": next(answers)})
+
+                async with asyncio.timeout(15):
+                    async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                        result = await client.call_tool("choose_colors", {})
+                        self.assertEqual(result.content[0].text, "You chose green, blue.")
+                        self.assertEqual(len(seen), 2)
+
+    async def test_choose_colors_decline_cancel(self):
+        for action, expected in [("decline", "No colors selected."), ("cancel", "Cancelled.")]:
+            with self.subTest(action=action):
+                async def on_form(context, params):
+                    return ElicitResult(action=action)
+
+                async with asyncio.timeout(15):
+                    async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                        result = await client.call_tool("choose_colors", {})
+                        self.assertEqual(result.content[0].text, expected)
+                        self.assertEqual(result.is_error, action == "decline")
 
     async def test_choose_color(self):
         for color in ["#ff0000", "#00ff00", "#0000ff"]:

@@ -359,8 +359,8 @@ responsibilities; the custom verifier can enforce identity using fresh assigns.
 `requestState` is redacted from Portico's parameter logs.
 
 This first slice supports one form at a time with flat string, number, integer,
-and boolean fields. Single-choice string enums are also supported. URL forms, multiple selection,
-and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
+and boolean fields. Single-choice string enums are also supported. Arrays of string enum choices support multiple selection. URL forms, labeled
+multiple-selection choices, and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
 tool schemas. Clients without form capability receive a completed tool error.
 
 Direct tests can use the same retry flow:
@@ -441,4 +441,30 @@ optional `default: "#00ff00"` must match a constant. Each choice supports exactl
 
 For choices whose labels and values are identical, plain
 `enum: ["red", "green", "blue"]` still works. Use either `enum` or `oneOf`, not
-both on the same field. Multiple selection remains future work.
+both on the same field. For multiple selection, see `choose_colors` below.
+
+
+## Choose several colors
+
+Call the separate `choose_colors` tool with `{}` to select one or two colors.
+It leaves `choose_color` and `greet` unchanged:
+
+```elixir
+colors: %{
+  type: "array",
+  title: "Choose colors",
+  minItems: 1,
+  maxItems: 2,
+  items: %{type: "string", enum: ["red", "green", "blue"]}
+}
+```
+
+The callback receives a list such as `["red", "blue"]` in the client's order.
+Unknown choices, too few/many choices, or a scalar value cause Portico to request
+the form again before calling `handle_input/3`. Array entries must be strings;
+nested arrays and objects are malformed replies. Decline and cancel work as usual.
+
+`minItems` and `maxItems` are optional nonnegative integers; the minimum cannot
+exceed the maximum. An optional default must be a list of allowed strings within
+those limits. This slice does not support titled choices inside arrays, nested
+arrays, or `uniqueItems`; it does not deduplicate submitted selections.

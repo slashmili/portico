@@ -83,6 +83,7 @@ defmodule Portico.Protocol.Elicitation do
   end
 
   defp decode(_reply, _state), do: {:error, :invalid_params}
+  defp primitive?(v) when is_list(v), do: Enum.all?(v, &string?/1)
   defp primitive?(v), do: string?(v) or is_number(v) or is_boolean(v)
   defp object?(v), do: is_map(v) and not is_struct(v) and Enum.all?(Map.keys(v), &string?/1)
   defp string?(v), do: is_binary(v) and String.valid?(v)

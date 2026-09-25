@@ -3,6 +3,7 @@ defmodule PorticoExample.MCP do
 
   tool "add", PorticoExample.Tools.Add
   tool "choose_color", PorticoExample.Tools.ChooseColor
+  tool "choose_colors", PorticoExample.Tools.ChooseColors
   tool "count", PorticoExample.Tools.Count
   tool "greet", PorticoExample.Tools.Greet
 end

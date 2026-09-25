@@ -3,9 +3,9 @@ defmodule Portico.Input do
   A form requested by a tool with `{:ok, form, request_state}`.
 
   `form/2` validates and normalizes a flat JSON Schema with string, number,
-  integer, or boolean fields, including single-choice string enums. Multiple
-  selection, nested objects, references, and URL mode are
-  not supported yet. Errors return tuples.
+  integer, or boolean fields, single-choice string enums, and arrays of string
+  enum choices. Nested objects, labeled multiple-selection options, references,
+  and URL mode are not supported yet. Errors return tuples.
 
   Portico protects the form and application state in an expiring signed token.
   Accepted answers are validated against that form before `handle_input/3` runs.
@@ -26,6 +26,10 @@ defmodule Portico.Input do
   Labeled choices use `oneOf: [%{const: "#ff0000", title: "Red"}, ...]`
   instead of `enum`. Constants must be unique strings, each with a string title;
   an optional default must match a constant, not its label.
+  Multiple-choice fields use `type: "array"` with
+  `items: %{type: "string", enum: ["red", "green", "blue"]}`. Optional
+  `minItems` and `maxItems` limit the selection count. Defaults must be lists
+  of allowed strings satisfying those limits.
   Invalid declarations return `{:error, :invalid_schema}`.
   """
   @spec form(String.t(), keyword()) :: {:ok, t()} | {:error, atom()}
@@ -70,6 +74,18 @@ defmodule Portico.Input do
       unique_constants?(choices, field)
   end
 
+  defp supported_field?(
+         %{"type" => "array", "items" => %{"type" => "string", "enum" => _} = items} = field
+       ) do
+    map_size(items) == 2 and supported_field?(items) and
+      Enum.all?(
+        Map.keys(field),
+        &(&1 in ["type", "items", "title", "description", "minItems", "maxItems", "default"])
+      ) and
+      (not Map.has_key?(field, "maxItems") or Map.get(field, "minItems", 0) <= field["maxItems"]) and
+      (not Map.has_key?(field, "default") or valid_selection?(field["default"], field))
+  end
+
   defp supported_field?(%{"type" => type} = field) do
     specific =
       case type do
@@ -89,6 +105,14 @@ defmodule Portico.Input do
   end
 
   defp supported_field?(_field), do: false
+
+  defp valid_selection?(values, field) when is_list(values) do
+    Enum.all?(values, &(&1 in field["items"]["enum"])) and
+      length(values) >= Map.get(field, "minItems", 0) and
+      (not Map.has_key?(field, "maxItems") or length(values) <= field["maxItems"])
+  end
+
+  defp valid_selection?(_values, _field), do: false
 
   defp titled_choice?(%{"const" => value, "title" => title} = choice),
     do: map_size(choice) == 2 and is_binary(value) and is_binary(title)

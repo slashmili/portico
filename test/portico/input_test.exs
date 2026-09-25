@@ -101,6 +101,46 @@ defmodule Portico.InputTest do
     end
   end
 
+  test "multiple-choice fields preserve limits and valid defaults" do
+    items = %{type: "string", enum: ["red", "green", "blue"]}
+
+    for field <- [
+          %{type: "array", items: items},
+          %{type: "array", items: items, minItems: 1, maxItems: 2, default: ["red", "blue"]},
+          %{type: "array", items: items, minItems: 0, maxItems: 0, default: []},
+          %{type: "array", items: items, default: ["green"]}
+        ] do
+      assert {:ok, form} =
+               Input.form("Colors", schema: %{type: "object", properties: %{colors: field}})
+
+      assert form.schema["properties"]["colors"]["items"]["enum"] == ["red", "green", "blue"]
+    end
+  end
+
+  test "multiple-choice fields reject unsupported items, inconsistent limits and invalid defaults" do
+    items = %{type: "string", enum: ["red", "blue"]}
+
+    for field <- [
+          %{type: "array"},
+          %{type: "array", items: %{type: "string"}},
+          %{type: "array", items: %{type: "object"}},
+          %{type: "array", items: %{items: items, type: "array"}},
+          %{type: "array", items: Map.put(items, :title, "Colors")},
+          %{type: "array", items: items, minItems: -1},
+          %{type: "array", items: items, minItems: 2, maxItems: 1},
+          %{type: "array", items: items, maxItems: "two"},
+          %{type: "array", items: items, default: "red"},
+          %{type: "array", items: items, default: ["purple"]},
+          %{type: "array", items: items, default: [1]},
+          %{type: "array", items: items, minItems: 1, default: []},
+          %{type: "array", items: items, maxItems: 1, default: ["red", "blue"]},
+          %{type: "array", items: items, uniqueItems: true}
+        ] do
+      assert Input.form("Colors", schema: %{type: "object", properties: %{colors: field}}) ==
+               {:error, :invalid_schema}
+    end
+  end
+
   test "invalid form declarations return errors" do
     for message <- [nil, 42, <<255>>],
         do: assert(Input.form(message, []) == {:error, :invalid_message})

@@ -204,7 +204,7 @@ defmodule Portico.ElicitationTest do
                input_responses: %{"unknown" => %{}}
              )
 
-    for content <- [%{}, %{"name" => ""}, %{"name" => 1}] do
+    for content <- [%{}, %{"name" => ""}, %{"name" => 1}, %{"name" => ["Ada"]}] do
       assert {:ok, %Input{}, _} =
                resume(mcp, token, %{"action" => "accept", "content" => content})
     end
@@ -270,6 +270,8 @@ defmodule Portico.ElicitationTest do
           %{},
           %{"action" => "other"},
           %{"action" => "accept", "content" => []},
+          %{"action" => "accept", "content" => %{"name" => [1]}},
+          %{"action" => "accept", "content" => %{"name" => [["Ada"]]}},
           %{"action" => "accept", "content" => %{"name" => %{}}}
         ] do
       assert {:error, :invalid_params} = resume(mcp, token, reply)
