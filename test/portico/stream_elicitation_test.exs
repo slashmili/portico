@@ -152,13 +152,17 @@ defmodule Portico.StreamElicitationTest do
              Portico.Test.call_tool(mcp, "work", %{}, request_state: token <> "x")
   end
 
-  test "unsupported clients get a completed error after progress", %{mcp: mcp} do
-    assert {:ok, %Result{is_error: true}} =
-             Portico.Test.call_tool(%{mcp | client_capabilities: %{}}, "work", %{})
+  test "unsupported clients get a protocol error after progress", %{mcp: mcp} do
+    for capabilities <- [%{}, %{"elicitation" => %{"url" => %{}}}] do
+      assert {:error, :form_not_supported} =
+               Portico.Test.call_tool(%{mcp | client_capabilities: capabilities}, "work", %{})
 
-    assert [_, response] = events(http(%{}, %{}, %{}))
-    assert response["result"]["resultType"] == "complete"
-    assert response["result"]["isError"]
+      conn = http(%{}, %{}, capabilities)
+      assert conn.status == 200 and conn.halted
+      assert [progress, response] = events(conn)
+      assert progress["method"] == "notifications/progress"
+      assert response == Portico.Protocol.Error.response(:form_not_supported, 8)
+    end
   end
 
   test "invalid forms, states and missing reply callbacks fail safely", %{mcp: mcp} do

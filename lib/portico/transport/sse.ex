@@ -52,6 +52,9 @@ defmodule Portico.Transport.SSE do
 
             finish(conn, response)
 
+          {:input_error, :form_not_supported, conn} ->
+            finish(conn, Error.response(:form_not_supported, execution.request.id))
+
           {:error, reason, conn} ->
             Logger.error(fn -> "Portico stream failed: #{inspect(reason)}" end)
             finish(conn, Error.response(:internal_error, execution.request.id))

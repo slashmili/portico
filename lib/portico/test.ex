@@ -127,7 +127,8 @@ defmodule Portico.Test do
   call the same tool and arguments with `request_state: wire_state` and
   `input_responses: %{"form" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}`.
   Declare `%{"elicitation" => %{"form" => %{}}}` in the context's client
-  capabilities. The helper uses the same verification and schema checks as HTTP.
+  capabilities. Missing form support returns `{:error, :form_not_supported}`
+  for initial calls, retries, and streaming callbacks. The helper uses the same verification and schema checks as HTTP.
 
   Supply `on_progress: fn update -> ... end` to collect progress. The helper
   supplies a progress token and calls this function in the test process, with
@@ -216,6 +217,7 @@ defmodule Portico.Test do
     case Portico.Stream.Runner.run(execution, nil, emit, options[:timeout]) do
       {:ok, result, _} -> {:ok, result}
       {:input, form, state, _fields, _} -> {:ok, form, state}
+      {:input_error, reason, _} -> {:error, reason}
       {:error, reason, _} -> {:error, reason}
       {:failed, kind, reason, stack, _} -> :erlang.raise(kind, reason, stack)
     end

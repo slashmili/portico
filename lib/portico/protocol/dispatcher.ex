@@ -128,6 +128,9 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
+      {:input_error, :form_not_supported} ->
+        {:reply, Error.response(:form_not_supported, request.id)}
+
       {:input_error, _reason} ->
         {:reply, Error.response(:invalid_params, request.id)}
 
@@ -178,9 +181,7 @@ defmodule Portico.Protocol.Dispatcher do
         {:input, form, fields["requestState"], fields}
 
       {:error, :form_not_supported} ->
-        {:ok, result} = Result.error("This client does not support form elicitation.")
-        {:ok, fields} = Encoder.tool_result(result)
-        {:ok, result, fields}
+        {:input_error, :form_not_supported}
 
       error ->
         error
@@ -293,7 +294,7 @@ defmodule Portico.Protocol.Dispatcher do
   defp run_callback(module, _arguments, request, {:resume, answer, state}) do
     cond do
       not Elicitation.supported?(request) ->
-        Result.error("This client does not support form elicitation.")
+        {:input_error, :form_not_supported}
 
       not function_exported?(module, :handle_input, 3) ->
         {:error, :missing_input_callback}

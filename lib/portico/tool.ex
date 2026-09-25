@@ -73,6 +73,10 @@ defmodule Portico.Tool do
 
   For form elicitation, return `{:ok, form, application_state}` from `call/2`
   and implement `handle_input/3`. Build the form with `Portico.Input.form/2`.
+  If the client lacks form support, Portico returns protocol error `-32021`
+  with the required capability. Test helpers return `{:error, :form_not_supported}`.
+  HTTP uses status 400 unless an SSE response has already started; in that case
+  the final event carries the error within the existing 200 response.
   Application state is a UTF-8 string; Portico wraps it and the form in a signed,
   expiring token. Configure a per-server key as described in `Portico.Elicitation`.
 

@@ -65,7 +65,13 @@ defmodule Portico.Protocol.RuntimeErrorsTest do
   end
 
   test "callback errors preserve their reason but never become client validation errors" do
-    for reason <- [:invalid_text, :invalid_params, :unknown_tool, {:private, "detail"}] do
+    for reason <- [
+          :invalid_text,
+          :invalid_params,
+          :unknown_tool,
+          :form_not_supported,
+          {:private, "detail"}
+        ] do
       args = %{"reply" => {:error, reason}}
       assert Dispatcher.call_tool(Server, "work", args, %Request{}) == {:error, reason}
       assert Portico.Test.call_tool(Server, "work", args) == {:error, reason}

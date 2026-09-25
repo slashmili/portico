@@ -15,6 +15,7 @@ import urllib.error
 
 from jsonschema import Draft202012Validator
 from mcp import Client
+from mcp.shared.exceptions import MCPError
 from mcp.types import TextContent, ElicitResult
 
 URL = os.environ.get("MCP_URL")
@@ -370,9 +371,61 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
                 for arguments in ({}, {"stream": True}):
-                    result = await client.call_tool("greet", arguments)
-                    self.assertTrue(result.is_error)
-                    self.assertIn("does not support form elicitation", result.content[0].text)
+                    with self.assertRaises(MCPError) as raised:
+                        await client.call_tool("greet", arguments)
+                    self.assertEqual(raised.exception.code, -32021)
+                    self.assertEqual(raised.exception.data, {
+                        "requiredCapabilities": {"elicitation": {"form": {}}}
+                    })
+
+    async def test_missing_form_capability_http_and_retry(self):
+        async def post(arguments, capabilities, retry=None):
+            params = {
+                "name": "greet", "arguments": arguments,
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                    "io.modelcontextprotocol/clientCapabilities": capabilities,
+                },
+            }
+            params.update(retry or {})
+            payload = {"jsonrpc": "2.0", "id": 24, "method": "tools/call", "params": params}
+
+            def send():
+                request = urllib.request.Request(URL, data=json.dumps(payload).encode(), headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                    "Mcp-Method": "tools/call", "Mcp-Name": "greet",
+                })
+                try:
+                    response = urllib.request.urlopen(request, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    body = response.read().decode()
+                    if response.headers.get_content_type() == "text/event-stream":
+                        events = [json.loads(line[6:]) for line in body.splitlines() if line.startswith("data: ")]
+                        return response.status, events[-1]
+                    return response.status, json.loads(body)
+
+            return await asyncio.to_thread(send)
+
+        async with asyncio.timeout(15):
+            for arguments in ({}, {"stream": True}):
+                _, pending = await post(arguments, {"elicitation": {"form": {}}})
+                token = pending["result"]["requestState"]
+                retry = {"requestState": token, "inputResponses": {"form": {"action": "cancel"}}}
+                for capabilities in ({}, {"elicitation": {"url": {}}}):
+                    for extra in (None, retry):
+                        status, body = await post(arguments, capabilities, extra)
+                        self.assertEqual(status, 200 if arguments.get("stream") and extra is None else 400)
+                        self.assertEqual(body, {
+                            "jsonrpc": "2.0", "id": 24,
+                            "error": {
+                                "code": -32021, "message": "Missing required client capability",
+                                "data": {"requiredCapabilities": {"elicitation": {"form": {}}}},
+                            },
+                        })
 
     async def test_greet_reasks_for_invalid_content(self):
         answers = iter([{"name": ""}, {"name": "Ada"}])

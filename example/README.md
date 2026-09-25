@@ -416,7 +416,11 @@ and stops the worker; it does not wait for the user in that process. The client
 submits the answer in a new POST with the original arguments and signed state.
 The same verifier, schema validation, and `handle_input/3` callbacks apply.
 The form is still delivered without a progress token; only progress notifications
-are omitted. A client without form capability receives a completed tool error.
+are omitted. A client without form capability receives protocol error `-32021` with
+`data.requiredCapabilities: {"elicitation": {"form": {}}}`. Normal replies and
+form retries use HTTP 400. If streaming has already started, the final SSE event
+carries this error within the existing HTTP 200 response. In Elixir tests,
+`call_tool` returns `{:error, :form_not_supported}`.
 
 
 ## Choose a color from a list

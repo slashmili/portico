@@ -246,8 +246,34 @@ defmodule Portico.ElicitationTest do
 
     for capabilities <- [%{}, %{"elicitation" => %{"url" => %{}}}] do
       context = %{mcp | client_capabilities: capabilities}
-      assert {:ok, %Result{is_error: true}} = Portico.Test.call_tool(context, "work", %{})
-      assert {:ok, %Result{is_error: true}} = resume(context, token, %{"action" => "cancel"})
+      assert {:error, :form_not_supported} = Portico.Test.call_tool(context, "work", %{})
+      assert {:error, :form_not_supported} = resume(context, token, %{"action" => "cancel"})
+
+      for extra <- [
+            %{},
+            %{"requestState" => token, "inputResponses" => %{"form" => %{"action" => "cancel"}}}
+          ] do
+        message = %{
+          "jsonrpc" => "2.0",
+          "id" => 9,
+          "method" => "tools/call",
+          "params" =>
+            Map.merge(
+              %{
+                "name" => "work",
+                "arguments" => %{},
+                "_meta" => %{
+                  "io.modelcontextprotocol/protocolVersion" => "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities" => capabilities
+                }
+              },
+              extra
+            )
+        }
+
+        assert Portico.Protocol.Dispatcher.dispatch(Server, message, mcp.assigns) ==
+                 {:reply, Portico.Protocol.Error.response(:form_not_supported, 9)}
+      end
     end
 
     refute_received :verified

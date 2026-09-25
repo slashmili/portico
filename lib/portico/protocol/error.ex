@@ -8,6 +8,7 @@ defmodule Portico.Protocol.Error do
           | :method_not_found
           | :internal_error
           | :header_mismatch
+          | :form_not_supported
           | {:unsupported_protocol_version, String.t(), [String.t()]}
 
   @doc """
@@ -47,6 +48,14 @@ defmodule Portico.Protocol.Error do
   defp details(:method_not_found), do: %{"code" => -32601, "message" => "Method not found"}
   defp details(:internal_error), do: %{"code" => -32603, "message" => "Internal error"}
   defp details(:header_mismatch), do: %{"code" => -32020, "message" => "Header mismatch"}
+
+  defp details(:form_not_supported) do
+    %{
+      "code" => -32021,
+      "message" => "Missing required client capability",
+      "data" => %{"requiredCapabilities" => %{"elicitation" => %{"form" => %{}}}}
+    }
+  end
 
   defp details({:unsupported_protocol_version, requested, supported})
        when is_binary(requested) and is_list(supported) do

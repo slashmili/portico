@@ -19,6 +19,18 @@ defmodule Portico.Protocol.ErrorTest do
            }
   end
 
+  test "missing form support identifies the required capability" do
+    assert Error.response(:form_not_supported, 7) == %{
+             "jsonrpc" => "2.0",
+             "id" => 7,
+             "error" => %{
+               "code" => -32021,
+               "message" => "Missing required client capability",
+               "data" => %{"requiredCapabilities" => %{"elicitation" => %{"form" => %{}}}}
+             }
+           }
+  end
+
   test "omits an unknown ID instead of encoding null" do
     expected = %{
       "jsonrpc" => "2.0",
