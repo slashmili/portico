@@ -139,7 +139,7 @@ defmodule Portico.Protocol.Dispatcher do
         {:reply, Error.response(:internal_error, request.id)}
 
       {:input, _form, _state, fields} ->
-        response(server, request.id, fields)
+        input_required(server, request.id, fields)
 
       {:ok, _result, fields} ->
         complete(server, request.id, fields)
@@ -163,24 +163,33 @@ defmodule Portico.Protocol.Dispatcher do
           end
 
         {:ok, %Input{} = form, state} ->
-          case Elicitation.encode(form, state, request) do
-            {:ok, form, fields} ->
-              {:input, form, fields["requestState"], fields}
-
-            {:error, :form_not_supported} ->
-              {:ok, result} = Result.error("This client does not support form elicitation.")
-              {:ok, fields} = Encoder.tool_result(result)
-              {:ok, result, fields}
-
-            error ->
-              error
-          end
+          input_result(form, state, request)
 
         outcome ->
           outcome
       end
     end
   end
+
+  @doc false
+  def input_result(form, state, request) do
+    case Elicitation.encode(form, state, request) do
+      {:ok, form, fields} ->
+        {:input, form, fields["requestState"], fields}
+
+      {:error, :form_not_supported} ->
+        {:ok, result} = Result.error("This client does not support form elicitation.")
+        {:ok, fields} = Encoder.tool_result(result)
+        {:ok, result, fields}
+
+      error ->
+        error
+    end
+  end
+
+  @doc false
+  def input_required(server, id, fields),
+    do: response(server, id, Map.put(fields, "resultType", "input_required"))
 
   defp tool_metadata(tool) do
     metadata = %{"name" => tool.name, "inputSchema" => tool.input_schema}

@@ -1,7 +1,7 @@
 defmodule Portico.Stream.Runner do
   @moduledoc false
-  alias Portico.{Result, Stream}
-  alias Portico.Protocol.Encoder
+  alias Portico.{Input, Result, Stream}
+  alias Portico.Protocol.{Dispatcher, Encoder}
 
   # The owner retains the transport; only application work runs in the linked
   # task. Catch callback failures so they cannot tear down the response process.
@@ -22,6 +22,16 @@ defmodule Portico.Stream.Runner do
               case Encoder.tool_result(result) do
                 {:ok, _} -> {:ok, result}
                 {:error, _reason} = error -> error
+              end
+
+            {:ok, %Input{} = form, state} ->
+              if function_exported?(execution.module, :handle_input, 3) do
+                case Dispatcher.input_result(form, state, execution.request) do
+                  {:ok, result, _fields} -> {:ok, result}
+                  outcome -> outcome
+                end
+              else
+                {:error, :missing_input_callback}
               end
 
             {:error, _reason} = error ->
@@ -95,6 +105,10 @@ defmodule Portico.Stream.Runner do
       {^task_ref, {:ok, result}} ->
         Process.demonitor(task_ref, [:flush])
         {:ok, result, acc}
+
+      {^task_ref, {:input, form, state, fields}} ->
+        Process.demonitor(task_ref, [:flush])
+        {:input, form, state, fields, acc}
 
       {^task_ref, {:error, reason}} ->
         Process.demonitor(task_ref, [:flush])

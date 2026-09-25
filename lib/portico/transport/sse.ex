@@ -46,6 +46,12 @@ defmodule Portico.Transport.SSE do
 
             finish(conn, response)
 
+          {:input, _form, _state, fields, conn} ->
+            {:reply, response} =
+              Dispatcher.input_required(execution.server, execution.request.id, fields)
+
+            finish(conn, response)
+
           {:error, reason, conn} ->
             Logger.error(fn -> "Portico stream failed: #{inspect(reason)}" end)
             finish(conn, Error.response(:internal_error, execution.request.id))

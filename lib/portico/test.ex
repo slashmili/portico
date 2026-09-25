@@ -122,7 +122,8 @@ defmodule Portico.Test do
   completion. `timeout:` bounds streaming work (default 5,000 milliseconds);
   expiry stops the task and returns `{:error, :timeout}`.
 
-  Form calls return `{:ok, %Portico.Input{}, wire_state}`. To submit a reply,
+  Form calls, including forms returned after streamed progress, return
+  `{:ok, %Portico.Input{}, wire_state}`. To submit a reply,
   call the same tool and arguments with `request_state: wire_state` and
   `input_responses: %{"form" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}`.
   Declare `%{"elicitation" => %{"form" => %{}}}` in the context's client
@@ -214,6 +215,7 @@ defmodule Portico.Test do
 
     case Portico.Stream.Runner.run(execution, nil, emit, options[:timeout]) do
       {:ok, result, _} -> {:ok, result}
+      {:input, form, state, _fields, _} -> {:ok, form, state}
       {:error, reason, _} -> {:error, reason}
       {:failed, kind, reason, stack, _} -> :erlang.raise(kind, reason, stack)
     end

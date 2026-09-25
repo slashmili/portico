@@ -1,10 +1,16 @@
 defmodule PorticoExample.Tools.Greet do
   use Portico.Tool,
     description: "Ask for a name and greet the user.",
-    input_schema: %{type: "object", properties: %{}, additionalProperties: false},
+    input_schema: %{
+      type: "object",
+      properties: %{stream: %{type: "boolean"}},
+      additionalProperties: false
+    },
     elicitation_verifier: &__MODULE__.verify_input/2
 
   @impl true
+  def call(%{"stream" => true}, _request), do: {:noreply, nil, :stream}
+
   def call(_arguments, _request) do
     {:ok, form} =
       Portico.Input.form("What is your name?",
@@ -16,6 +22,12 @@ defmodule PorticoExample.Tools.Greet do
       )
 
     {:ok, form, "greet:v1"}
+  end
+
+  @impl true
+  def handle_stream(_data, stream) do
+    :ok = Portico.Stream.send(stream, {:progress, 1, total: 1, message: "Ready to ask your name"})
+    call(%{}, stream.request)
   end
 
   # An optional override: keep the default token checks, then enforce an

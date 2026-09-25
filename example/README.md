@@ -359,8 +359,7 @@ responsibilities; the custom verifier can enforce identity using fresh assigns.
 `requestState` is redacted from Portico's parameter logs.
 
 This first slice supports one form at a time with flat string, number, integer,
-and boolean fields. URL forms, enum selectors, and forms returned by streaming
-callbacks are not implemented. String `format` remains an annotation, as with
+and boolean fields. URL forms, enum selectors, and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
 tool schemas. Clients without form capability receive a completed tool error.
 
 Direct tests can use the same retry flow:
@@ -373,3 +372,31 @@ mcp = %{mcp | client_capabilities: %{"elicitation" => %{"form" => %{}}}}
   input_responses: %{"form" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}
 assert_text result, "Hello, Ada!"
 ```
+
+
+## Stream progress before asking a form
+
+Call `greet` with `{"stream": true}` to receive progress followed by the name
+form. The tool chooses the stream in `call/2` and returns a form from its worker:
+
+```elixir
+def call(%{"stream" => true}, _request), do: {:noreply, nil, :stream}
+
+def handle_stream(_data, stream) do
+  :ok = Portico.Stream.send(stream, {:progress, 1, total: 1, message: "Ready to ask your name"})
+  {:ok, form} = Portico.Input.form("What is your name?",
+    schema: %{
+      type: "object",
+      properties: %{name: %{type: "string", minLength: 1}},
+      required: ["name"]
+    })
+  {:ok, form, "greet:v1"}
+end
+```
+
+The `input_required` result is the final SSE event. Portico closes the stream
+and stops the worker; it does not wait for the user in that process. The client
+submits the answer in a new POST with the original arguments and signed state.
+The same verifier, schema validation, and `handle_input/3` callbacks apply.
+The form is still delivered without a progress token; only progress notifications
+are omitted. A client without form capability receives a completed tool error.

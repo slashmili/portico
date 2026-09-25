@@ -55,4 +55,22 @@ defmodule PorticoExample.MCPTest do
       assert_text result, text
     end
   end
+
+  test "greet streams progress before asking the form", %{mcp: mcp} do
+    mcp = %{mcp | client_capabilities: %{"elicitation" => %{"form" => %{}}}}
+    owner = self()
+
+    {:ok, %Portico.Input{}, state} =
+      call_tool mcp, "greet", %{"stream" => true},
+        on_progress: fn update -> send(owner, {:progress, update}) end
+
+    assert_received {:progress, %{progress: 1, message: "Ready to ask your name"}}
+
+    {:ok, result} =
+      call_tool mcp, "greet", %{"stream" => true},
+        request_state: state,
+        input_responses: %{"form" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}
+
+    assert_text result, "Hello, Ada!"
+  end
 end

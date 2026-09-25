@@ -185,12 +185,43 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(result.content[0].text, expected)
                         self.assertEqual(len(seen), 1)
 
+    async def test_greet_stream_then_form(self):
+        for action, expected in [("accept", "Hello, Ada!"), ("decline", "Name declined."), ("cancel", "Cancelled.")]:
+            with self.subTest(action=action):
+                events = []
+
+                async def on_progress(progress, total, message):
+                    events.append(("progress", progress, total, message))
+
+                async def on_form(context, params):
+                    events.append(("form", params.message))
+                    return ElicitResult(action=action, content={"name": "Ada"} if action == "accept" else None)
+
+                async with asyncio.timeout(15):
+                    async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                        result = await client.call_tool("greet", {"stream": True}, progress_callback=on_progress)
+                        self.assertEqual(result.content[0].text, expected)
+                        self.assertEqual(events, [
+                            ("progress", 1, 1, "Ready to ask your name"),
+                            ("form", "What is your name?"),
+                        ])
+
+    async def test_greet_stream_without_progress_callback(self):
+        async def on_form(context, params):
+            return ElicitResult(action="accept", content={"name": "Ada"})
+
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                result = await client.call_tool("greet", {"stream": True})
+                self.assertEqual(result.content[0].text, "Hello, Ada!")
+
     async def test_greet_without_form_support(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
-                result = await client.call_tool("greet", {})
-                self.assertTrue(result.is_error)
-                self.assertIn("does not support form elicitation", result.content[0].text)
+                for arguments in ({}, {"stream": True}):
+                    result = await client.call_tool("greet", arguments)
+                    self.assertTrue(result.is_error)
+                    self.assertIn("does not support form elicitation", result.content[0].text)
 
     async def test_greet_reasks_for_invalid_content(self):
         answers = iter([{"name": ""}, {"name": "Ada"}])

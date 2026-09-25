@@ -77,7 +77,9 @@ defmodule Portico.Tool do
   verified application state, and the fresh request. The protected form schema
   is checked automatically; missing or invalid answers reissue the form without
   calling `handle_input/3`. A reply handler may finish, ask another form, or start
-  a stream. Streaming callbacks cannot return forms in this first slice.
+  a stream. Streaming callbacks may also return `{:ok, form, application_state}`;
+  Portico sends the form as the final SSE result and closes the stream. The
+  answer arrives in a new request through the same `handle_input/3` flow.
 
   For streaming, return `{:noreply, data, :stream}` from `call/2` and implement
   the optional `handle_stream/2` callback:
@@ -97,7 +99,8 @@ defmodule Portico.Tool do
   The data is an ordinary Elixir value and is not serialized or retained for retries.
 
   The callback returns `{:ok, %Portico.Result{}}`, including for expected tool
-  failures, or `{:error, reason}` when it cannot produce a result. It cannot start
+  failures, `{:ok, form, application_state}` to ask for input, or `{:error, reason}`
+  when it cannot produce a result. It cannot start
   another stream. Portico stops its task on timeout or detected disconnect. Detached work started by application code is outside
   this task's lifetime; cancellation does not undo effects already performed.
   """
@@ -111,7 +114,7 @@ defmodule Portico.Tool do
 
   @doc "Runs request-scoped streaming work and returns the final result."
   @callback handle_stream(term(), Portico.Stream.t()) ::
-              {:ok, Portico.Result.t()} | {:error, term()}
+              {:ok, Portico.Result.t()} | {:ok, Portico.Input.t(), String.t()} | {:error, term()}
   @doc "Handles a validated form reply and state returned by the elicitation verifier."
   @callback handle_input(Portico.Input.answer(), term(), Portico.Request.t()) ::
               {:ok, Portico.Result.t()}
