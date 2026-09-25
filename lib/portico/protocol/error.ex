@@ -15,28 +15,31 @@ defmodule Portico.Protocol.Error do
 
   A known ID is preserved. `nil` means the ID could not be determined and is
   omitted from the response, as required by the targeted MCP revision. Invalid
-  IDs must not be passed through; callers should use `nil` in that case.
+  IDs return `{:error, :invalid_id}`. Unsupported or malformed reasons return
+  `{:error, :invalid_reason}`. IDs are validated first.
 
   Messages are fixed. Version mismatch data contains only requested and supported
   versions, not the complete request payload. These are protocol errors,
   not tool execution results. Notification suppression and HTTP status codes
   belong to the dispatcher and transport, respectively.
   """
-  @spec response(reason(), String.t() | integer() | nil) :: map()
+  @spec response(reason(), String.t() | integer() | nil) ::
+          map() | {:error, :invalid_id | :invalid_reason}
   def response(reason, id \\ nil) do
-    response = %{"jsonrpc" => "2.0", "error" => details(reason)}
-
-    cond do
-      is_nil(id) ->
-        response
-
-      is_integer(id) or (is_binary(id) and String.valid?(id)) ->
-        Map.put(response, "id", id)
-
-      true ->
-        raise ArgumentError, "expected a string or integer request ID, or nil when unknown"
+    with :ok <- valid_id(id),
+         %{} = details <- details(reason) do
+      response = %{"jsonrpc" => "2.0", "error" => details}
+      if is_nil(id), do: response, else: Map.put(response, "id", id)
     end
   end
+
+  defp valid_id(id) when is_nil(id) or is_integer(id), do: :ok
+
+  defp valid_id(id) when is_binary(id) do
+    if String.valid?(id), do: :ok, else: {:error, :invalid_id}
+  end
+
+  defp valid_id(_id), do: {:error, :invalid_id}
 
   defp details(:parse_error), do: %{"code" => -32700, "message" => "Parse error"}
   defp details(:invalid_request), do: %{"code" => -32600, "message" => "Invalid request"}
@@ -45,11 +48,19 @@ defmodule Portico.Protocol.Error do
   defp details(:internal_error), do: %{"code" => -32603, "message" => "Internal error"}
   defp details(:header_mismatch), do: %{"code" => -32020, "message" => "Header mismatch"}
 
-  defp details({:unsupported_protocol_version, requested, supported}) do
-    %{
-      "code" => -32022,
-      "message" => "Unsupported protocol version",
-      "data" => %{"requested" => requested, "supported" => supported}
-    }
+  defp details({:unsupported_protocol_version, requested, supported})
+       when is_binary(requested) and is_list(supported) do
+    if String.valid?(requested) and
+         Enum.all?(supported, &(is_binary(&1) and String.valid?(&1))) do
+      %{
+        "code" => -32022,
+        "message" => "Unsupported protocol version",
+        "data" => %{"requested" => requested, "supported" => supported}
+      }
+    else
+      {:error, :invalid_reason}
+    end
   end
+
+  defp details(_reason), do: {:error, :invalid_reason}
 end

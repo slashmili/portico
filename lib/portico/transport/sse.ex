@@ -64,8 +64,17 @@ defmodule Portico.Transport.SSE do
     halt(conn)
   end
 
-  defp event(conn, message),
-    do: write(conn, ["event: message\ndata: ", JSON.encode!(message), "\n\n"])
+  defp event(conn, message) do
+    case Encoder.json(message) do
+      {:ok, body} ->
+        write(conn, ["event: message\ndata: ", body, "\n\n"])
+
+      {:error, :invalid_json} ->
+        Logger.error("Portico stream encoding failed: :invalid_json")
+        {_status, conn} = event(conn, Encoder.internal_error(message["id"]))
+        {:error, conn}
+    end
+  end
 
   defp write(conn, data) do
     case chunk(conn, data) do

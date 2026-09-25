@@ -8,6 +8,11 @@ defmodule Portico.SchemaErrorsTest do
     String.replace_prefix(message, "Tool arguments do not match the input schema. ", "")
   end
 
+  test "invalid UTF-8 property paths do not raise during diagnostic encoding" do
+    assert failure(%{additionalProperties: false}, %{<<255>> => "secret"}) ==
+             "Invalid property path: is not allowed"
+  end
+
   test "valid inputs succeed" do
     {_, validator} = Schema.build!(%{type: "integer"}, __ENV__)
     assert :ok = Schema.validate(validator, 2.0)

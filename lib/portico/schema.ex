@@ -105,7 +105,10 @@ defmodule Portico.Schema do
       end)
 
     # JSON quoting also escapes control characters in property names.
-    JSON.encode!(pointer) <> ": " <> reason
+    case Portico.Protocol.Encoder.json(pointer) do
+      {:ok, quoted} -> quoted <> ": " <> reason
+      {:error, :invalid_json} -> "Invalid property path: " <> reason
+    end
   end
 
   defp normalize(value) when is_map(value) and not is_struct(value) do

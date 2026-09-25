@@ -2,6 +2,23 @@ defmodule Portico.Protocol.Encoder do
   @moduledoc false
 
   alias Portico.Result
+  alias Portico.Protocol.Error
+
+  @doc "Encodes JSON, returning a stable error without exposing the rejected value."
+  @spec json(term()) :: {:ok, String.t()} | {:error, :invalid_json}
+  def json(value) do
+    {:ok, JSON.encode!(value)}
+  rescue
+    _error -> {:error, :invalid_json}
+  end
+
+  @doc false
+  def internal_error(id) do
+    case Error.response(:internal_error, id) do
+      {:error, :invalid_id} -> Error.response(:internal_error)
+      response -> response
+    end
+  end
 
   @doc "Encodes supported text results, rejecting malformed or unsupported content."
   @spec tool_result(Result.t()) :: {:ok, map()} | {:error, :invalid_result}

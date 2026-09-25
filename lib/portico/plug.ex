@@ -29,6 +29,10 @@ defmodule Portico.Plug do
       `authorization`, or `api_key` are always replaced with `"[FILTERED]"`.
       This filters by key, not by value; add fragments for application secrets.
 
+  Invalid configuration raises during `init/1` so declaration mistakes fail fast.
+  Response encoding failures are logged without the rejected payload and become
+  generic internal errors, including final error events in an open SSE response.
+
   MCP requests are logged at `:debug`; the application's Logger level controls
   visibility. Set `config :logger, level: :info` to hide these debug logs.
   Logging covers requests with valid envelopes and required metadata, for both
@@ -59,7 +63,7 @@ defmodule Portico.Plug do
   @behaviour Plug
   import Plug.Conn
   require Logger
-  alias Portico.Protocol.{Dispatcher, Error, Validation}
+  alias Portico.Protocol.{Dispatcher, Encoder, Error, Validation}
   alias Portico.Transport.Headers
 
   @impl true
@@ -255,6 +259,17 @@ defmodule Portico.Plug do
   defp filter_parameters(value, _filters), do: value
 
   defp reply(conn, response) do
+    case Encoder.json(response) do
+      {:ok, body} ->
+        send_reply(conn, response, body)
+
+      {:error, :invalid_json} ->
+        Logger.error("Portico response encoding failed: :invalid_json")
+        reply(conn, Encoder.internal_error(response["id"]))
+    end
+  end
+
+  defp send_reply(conn, response, body) do
     status =
       case response do
         %{"error" => %{"code" => -32601}} -> 404
@@ -265,7 +280,7 @@ defmodule Portico.Plug do
 
     conn
     |> put_resp_content_type("application/json")
-    |> send_resp(status, JSON.encode!(response))
+    |> send_resp(status, body)
     |> halt()
   end
 

@@ -39,17 +39,19 @@ defmodule Portico.Protocol.ErrorTest do
 
   test "rejects invalid IDs rather than reflecting them into a response" do
     for id <- [true, false, 1.0, [], %{}, :request, <<255>>] do
-      assert_raise ArgumentError,
-                   "expected a string or integer request ID, or nil when unknown",
-                   fn ->
-                     Error.response(:invalid_request, id)
-                   end
+      assert Error.response(:invalid_request, id) == {:error, :invalid_id}
     end
   end
 
   test "does not silently turn unsupported error reasons into a wire error" do
-    assert_raise FunctionClauseError, fn ->
-      apply(Error, :response, [:unknown_reason, 1])
+    for reason <- [
+          :unknown_reason,
+          {:unsupported_protocol_version, <<255>>, ["valid"]},
+          {:unsupported_protocol_version, "valid", [nil]},
+          {:unsupported_protocol_version, "valid", [<<255>>]},
+          {:unsupported_protocol_version, "valid", nil}
+        ] do
+      assert Error.response(reason, 1) == {:error, :invalid_reason}
     end
   end
 end
