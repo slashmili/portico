@@ -27,6 +27,9 @@ defmodule Portico.Tool do
   duplicate normalized keys and non-JSON values are rejected. Values such as
   types and required property names must be JSON strings, not atoms. Catalogs
   expose the normalized schema. JSV is an internal implementation detail.
+  `x-mcp-header` annotations are rejected at compilation because custom MCP
+  parameter header validation is not implemented. This applies to nested schemas
+  too; literal data in `const`, `enum`, `default`, and `examples` is unaffected.
 
   The initial dialect is `https://json-schema.org/draft/2020-12/schema`, also
   used when `$schema` is absent. Local references and bundled meta-schemas are

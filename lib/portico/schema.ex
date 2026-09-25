@@ -28,7 +28,7 @@ defmodule Portico.Schema do
 
   def build!(schema, env) do
     normalized = normalize(schema)
-    check_dialect!(normalized)
+    check_schema!(normalized)
 
     case JSV.validate(normalized, @meta_validator, cast: false) do
       {:ok, _} -> :ok
@@ -135,7 +135,13 @@ defmodule Portico.Schema do
   defp normalize_key(key) when is_binary(key), do: normalize(key)
   defp normalize_key(_key), do: raise(ArgumentError, "expected atom or string map keys")
 
-  defp check_dialect!(schema) when is_map(schema) do
+  defp check_schema!(schema) when is_map(schema) do
+    if Map.has_key?(schema, "x-mcp-header") do
+      raise ArgumentError,
+            "x-mcp-header is not supported; remove the annotation from the input schema " <>
+              "until Portico supports custom MCP parameter header validation"
+    end
+
     case Map.get(schema, "$schema", @dialect) do
       @dialect -> :ok
       _ -> raise ArgumentError, "only Draft 2020-12 schemas are supported"
@@ -145,18 +151,18 @@ defmodule Portico.Schema do
         children = schema[keyword],
         is_map(children),
         {_name, child} <- children,
-        do: check_dialect!(child)
+        do: check_schema!(child)
 
     for keyword <- @schema_lists,
         children = schema[keyword],
         is_list(children),
         child <- children,
-        do: check_dialect!(child)
+        do: check_schema!(child)
 
     for keyword <- @schema_values,
         Map.has_key?(schema, keyword),
-        do: check_dialect!(schema[keyword])
+        do: check_schema!(schema[keyword])
   end
 
-  defp check_dialect!(_schema), do: :ok
+  defp check_schema!(_schema), do: :ok
 end

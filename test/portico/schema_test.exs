@@ -36,6 +36,77 @@ defmodule Portico.SchemaTest do
     refute Map.has_key?(module.__portico_tool__(), :validator)
   end
 
+  test "rejects custom header annotations at the root and nested schema locations" do
+    annotation = %{"type" => "string", "x-mcp-header" => "Region"}
+
+    schemas = [
+      annotation,
+      %{properties: %{region: %{type: "string", "x-mcp-header": "Region"}}},
+      %{properties: %{nested: %{properties: %{region: annotation}}}},
+      %{"$defs" => %{"region" => annotation}, "$ref" => "#/$defs/region"}
+    ]
+
+    map_schemas =
+      for keyword <- [
+            "$defs",
+            "definitions",
+            "properties",
+            "patternProperties",
+            "dependentSchemas"
+          ],
+          do: %{keyword => %{"region" => annotation}}
+
+    list_schemas =
+      for keyword <- ["allOf", "anyOf", "oneOf", "prefixItems"],
+          do: %{keyword => [annotation]}
+
+    value_schemas =
+      for keyword <- [
+            "items",
+            "additionalProperties",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+            "contains",
+            "propertyNames",
+            "not",
+            "if",
+            "then",
+            "else",
+            "contentSchema"
+          ],
+          do: %{keyword => annotation}
+
+    for schema <- schemas ++ map_schemas ++ list_schemas ++ value_schemas do
+      error = assert_raise CompileError, fn -> compile_tool(schema) end
+      assert error.file == "schema_declaration.ex"
+      assert error.description =~ "invalid :input_schema: x-mcp-header is not supported"
+      assert error.description =~ "remove the annotation"
+    end
+
+    for value <- [nil, false, "", 42] do
+      assert_raise CompileError, ~r/x-mcp-header is not supported/, fn ->
+        compile_tool(%{"x-mcp-header" => value})
+      end
+    end
+  end
+
+  test "allows x-mcp-header as literal data and as a property name" do
+    literal = %{"x-mcp-header" => "ordinary data"}
+
+    schema = %{
+      "type" => "object",
+      "properties" => %{"x-mcp-header" => %{"type" => "string"}},
+      "const" => literal,
+      "enum" => [literal],
+      "default" => literal,
+      "examples" => [literal]
+    }
+
+    module = compile_tool(schema)
+    assert module.__portico_tool__().input_schema == schema
+    assert Portico.Schema.valid?(module.__portico_validator__(), literal)
+  end
+
   test "rejects invalid keyword values at declaration time" do
     for schema <- [
           %{type: "wrong"},

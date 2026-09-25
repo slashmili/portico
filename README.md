@@ -42,7 +42,7 @@ are not supported yet. Try the example's `summarize` tool for structured results
 
 Only MCP **2026-07-28** is implemented. Resources, prompts, subscriptions, stdio,
 legacy protocol versions, and URL elicitation are outside the current scope.
-Custom `x-mcp-header` annotations are not supported; omit them from tool schemas.
+Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool schemas.
 The host application owns authentication, authorization, and rate limiting.
 Passing user assigns through Plug does not provide MCP OAuth support.
 
