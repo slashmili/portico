@@ -1,6 +1,6 @@
 # Portico example
 
-A standalone Elixir application exposing `add` and `count` MCP tools over real HTTP.
+A standalone Elixir application demonstrating tools, streaming, forms, and structured results over HTTP.
 It depends on Portico via `path: ".."` and owns its Bandit listener.
 
 ## Run
@@ -60,6 +60,22 @@ ALLOWED_ORIGINS=http://localhost:6274 mix run --no-halt
 Use the Origin your client actually sends; the value above is just an example.
 This configures request validation, not browser CORS handling. The example has
 no authentication or CORS preflight support.
+
+## Structured results
+
+Call `summarize` with `{"numbers": [2, 3, -1]}`. It returns
+`structuredContent: {"count": 3, "sum": 4}` and a text item containing the same JSON.
+An empty list returns zero for both values. The tool uses:
+
+```elixir
+{:ok, result} = Portico.Result.structured(%{count: count, sum: sum})
+{:ok, result}
+```
+
+`result.structured_content` exposes the normalized data in Elixir tests. Atom map
+keys become strings recursively. JSON arrays, scalars and null are supported too;
+unsupported values return `{:error, :invalid_structured_content}`. Use `case` when
+that error should be recoverable. This example does not declare an output schema.
 
 ## Test with the official Python MCP client
 

@@ -1,6 +1,19 @@
 defmodule PorticoExample.MCPTest do
   use Portico.Test, server: PorticoExample.MCP, async: true
 
+  test "summarize returns structured JSON with a text fallback", %{mcp: mcp} do
+    for {numbers, expected} <- [
+          {[2, 3, -1], %{"count" => 3, "sum" => 4}},
+          {[], %{"count" => 0, "sum" => 0}},
+          {[2.0], %{"count" => 1, "sum" => 2}}
+        ] do
+      {:ok, result} = call_tool mcp, "summarize", %{"numbers" => numbers}
+      assert result.structured_content == expected
+      assert [%{text: text}] = result.content
+      assert JSON.decode!(text) == expected
+    end
+  end
+
   test "adds integers", %{mcp: mcp} do
     {:ok, result} = call_tool mcp, "add", %{"a" => 2, "b" => 3}
     assert_text result, "5"

@@ -3,6 +3,51 @@ defmodule Portico.ResultTest do
   alias Portico.Result
   doctest Result
 
+  test "structured content normalizes JSON values and includes a matching text fallback" do
+    for {input, expected} <- [
+          {%{sum: 5, nested: [%{ok: true}, nil]},
+           %{"sum" => 5, "nested" => [%{"ok" => true}, nil]}},
+          {[], []},
+          {%{}, %{}},
+          {[1, 2.5, false], [1, 2.5, false]},
+          {"日本語", "日本語"},
+          {1, 1},
+          {2.5, 2.5},
+          {true, true},
+          {false, false},
+          {nil, nil}
+        ] do
+      assert {:ok, result} = Result.structured(input)
+      assert result.structured_content == expected
+      assert [%{type: "text", text: json}] = result.content
+      assert JSON.decode!(json) == expected
+      assert {:ok, updated} = result |> Result.text("Commentary") |> Result.put_error(true)
+      assert updated.structured_content == expected
+      assert updated.is_error
+    end
+  end
+
+  test "structured content rejects invalid data recursively with error tuples" do
+    for value <- [
+          :not_set,
+          :ok,
+          self(),
+          fn -> :ok end,
+          {1, 2},
+          %Result{},
+          <<255>>,
+          %{1 => "value"},
+          %{<<255>> => 1},
+          %{"sum" => 1, sum: 2},
+          [%{nested: :invalid}],
+          %{nested: %{"a" => 1, a: 2}},
+          [1 | 2],
+          [1 | %{}]
+        ] do
+      assert Result.structured(value) == {:error, :invalid_structured_content}
+    end
+  end
+
   test "text returns a tuple and preserves empty text, Unicode and line breaks" do
     for text <- ["", "Grüße 👋\nSecond line\n"] do
       assert Result.text(text) == {:ok, %Result{content: [%{type: "text", text: text}]}}

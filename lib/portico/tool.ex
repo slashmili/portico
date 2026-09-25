@@ -37,7 +37,7 @@ defmodule Portico.Tool do
   Every tool must implement a public `call/2` callback. Use
   `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
   the callback's return shape. Protocol calls also validate envelopes and core
-  metadata and encode completed text results. `Portico.Plug` serves HTTP requests;
+  metadata and encode completed text and structured results. `Portico.Plug` serves HTTP requests;
   arguments are checked against the compiled schema before the callback runs.
   Invalid arguments return a completed tool error with field paths and reasons;
   the callback is skipped. Paths are JSON-quoted JSON Pointers (`""` means the
@@ -49,6 +49,10 @@ defmodule Portico.Tool do
   The request supplies assigns and client metadata; callbacks do not return it.
   `:ok` means a result was produced. The result's `is_error` flag distinguishes
   successful execution from an expected tool failure.
+
+  Use `Portico.Result.structured/1` for JSON data, including a serialized text
+  fallback. It returns the same constructor tuple; match `{:ok, result}` and
+  return `{:ok, result}`. Output-schema declarations are not supported yet.
 
   Expected tool failures use the same callback shape:
 

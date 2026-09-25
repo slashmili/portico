@@ -20,15 +20,28 @@ defmodule Portico.Protocol.Encoder do
     end
   end
 
-  @doc "Encodes supported text results, rejecting malformed or unsupported content."
+  @doc "Encodes supported text and structured results, rejecting malformed or unsupported content."
   @spec tool_result(Result.t()) :: {:ok, map()} | {:error, :invalid_result}
-  def tool_result(%Result{content: content, is_error: is_error}) when is_boolean(is_error) do
+  def tool_result(%Result{content: content, is_error: is_error} = result)
+      when is_boolean(is_error) do
     with {:ok, encoded} <- text_content(content) do
-      {:ok, %{"content" => encoded, "isError" => is_error}}
+      structured_content(
+        %{"content" => encoded, "isError" => is_error},
+        result.structured_content
+      )
     end
   end
 
   def tool_result(_result), do: {:error, :invalid_result}
+
+  defp structured_content(fields, :not_set), do: {:ok, fields}
+
+  defp structured_content(fields, value) do
+    case Result.structured(value) do
+      {:ok, result} -> {:ok, Map.put(fields, "structuredContent", result.structured_content)}
+      {:error, _} -> {:error, :invalid_result}
+    end
+  end
 
   defp text_content([]), do: {:ok, []}
 

@@ -6,4 +6,5 @@ defmodule PorticoExample.MCP do
   tool "choose_colors", PorticoExample.Tools.ChooseColors
   tool "count", PorticoExample.Tools.Count
   tool "greet", PorticoExample.Tools.Greet
+  tool "summarize", PorticoExample.Tools.Summarize
 end

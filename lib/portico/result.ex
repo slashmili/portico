@@ -20,12 +20,84 @@ defmodule Portico.Result do
   propagating an existing error so pipelines preserve the first failure.
   """
 
-  defstruct content: [], is_error: false
+  defstruct content: [], is_error: false, structured_content: :not_set
 
   @type text_content :: %{type: String.t(), text: String.t()}
-  @type t :: %__MODULE__{content: [text_content()], is_error: boolean()}
-  @type error_reason :: :invalid_text | :invalid_result | :invalid_error_flag
+  @type t :: %__MODULE__{
+          content: [text_content()],
+          is_error: boolean(),
+          structured_content: term()
+        }
+  @type error_reason ::
+          :invalid_text | :invalid_result | :invalid_error_flag | :invalid_structured_content
   @type outcome :: {:ok, t()} | {:error, error_reason()}
+
+  @doc """
+  Builds structured content with a serialized JSON text fallback.
+
+  Accepts any JSON value, including arrays, scalars and `nil` (JSON null).
+  Plain maps may have atom or UTF-8 string keys; keys normalize recursively to
+  strings. Colliding keys, structs, non-JSON values and invalid UTF-8 return
+  `{:error, :invalid_structured_content}`. Other atom values are not JSON strings.
+
+  The returned `structured_content` contains normalized data. Ordinary text
+  results use `:not_set` to omit the wire field, distinct from explicit JSON null.
+  `text/2` appends commentary and `put_error/2` changes the error flag while
+  preserving structured content. Output-schema declarations are not supported yet.
+
+  ## Examples
+
+      iex> {:ok, result} = Portico.Result.structured(%{sum: 5})
+      iex> result.structured_content
+      %{"sum" => 5}
+  """
+  @spec structured(term()) :: outcome()
+  def structured(value) do
+    with {:ok, normalized} <- normalize_json(value),
+         {:ok, json} <- Portico.Protocol.Encoder.json(normalized) do
+      {:ok,
+       %__MODULE__{
+         structured_content: normalized,
+         content: [%{type: "text", text: json}]
+       }}
+    else
+      _ -> {:error, :invalid_structured_content}
+    end
+  end
+
+  defp normalize_json(value) when is_map(value) and not is_struct(value) do
+    Enum.reduce_while(value, {:ok, %{}}, fn {key, value}, {:ok, acc} ->
+      key = if is_atom(key), do: Atom.to_string(key), else: key
+
+      with true <- is_binary(key) and String.valid?(key) and not Map.has_key?(acc, key),
+           {:ok, normalized} <- normalize_json(value) do
+        {:cont, {:ok, Map.put(acc, key, normalized)}}
+      else
+        _ -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp normalize_json([]), do: {:ok, []}
+
+  defp normalize_json([head | tail]) do
+    with {:ok, head} <- normalize_json(head),
+         true <- is_list(tail),
+         {:ok, tail} <- normalize_json(tail) do
+      {:ok, [head | tail]}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_json(value) when is_binary(value) do
+    if String.valid?(value), do: {:ok, value}, else: :error
+  end
+
+  defp normalize_json(value) when is_number(value) or is_boolean(value) or is_nil(value),
+    do: {:ok, value}
+
+  defp normalize_json(_), do: :error
 
   @doc """
   Builds one text item. Accepts UTF-8 strings, including empty strings.

@@ -87,7 +87,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add", "choose_color", "choose_colors", "count", "greet"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "choose_color", "choose_colors", "count", "greet", "summarize"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)
@@ -102,6 +102,19 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     "required": ["a", "b"],
                     "additionalProperties": False,
                 })
+
+    async def test_summarize(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                for numbers, expected in [([2, 3, -1], {"count": 3, "sum": 4}), ([], {"count": 0, "sum": 0}), ([2.0], {"count": 1, "sum": 2})]:
+                    with self.subTest(numbers=numbers):
+                        result = await client.call_tool("summarize", {"numbers": numbers})
+                        self.assertFalse(result.is_error)
+                        self.assertEqual(result.structured_content, expected)
+                        self.assertEqual(len(result.content), 1)
+                        self.assertEqual(json.loads(result.content[0].text), expected)
+                result = await client.call_tool("summarize", {"numbers": ["bad"]})
+                self.assertTrue(result.is_error)
 
     async def test_add(self):
         async with asyncio.timeout(15):
