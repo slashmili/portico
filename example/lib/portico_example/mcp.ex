@@ -3,4 +3,5 @@ defmodule PorticoExample.MCP do
 
   tool "add", PorticoExample.Tools.Add
   tool "count", PorticoExample.Tools.Count
+  tool "greet", PorticoExample.Tools.Greet
 end

@@ -9,9 +9,13 @@ import tempfile
 import time
 import unittest
 
+import json
+import urllib.request
+import urllib.error
+
 from jsonschema import Draft202012Validator
 from mcp import Client
-from mcp.types import TextContent
+from mcp.types import TextContent, ElicitResult
 
 URL = os.environ.get("MCP_URL")
 PROTOCOL_VERSION = "2026-07-28"
@@ -83,7 +87,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add", "count"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "count", "greet"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)
@@ -163,6 +167,85 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         result = await client.call_tool("count", arguments)
                         self.assertTrue(result.is_error)
                         self.assertIn('"/to":', result.content[0].text)
+
+    async def test_greet_form_accept_decline_cancel(self):
+        for action, expected in [("accept", "Hello, Ada!"), ("decline", "Name declined."), ("cancel", "Cancelled.")]:
+            with self.subTest(action=action):
+                seen = []
+
+                async def on_form(context, params):
+                    seen.append(params)
+                    self.assertEqual(params.message, "What is your name?")
+                    self.assertEqual(params.requested_schema["required"], ["name"])
+                    return ElicitResult(action=action, content={"name": "Ada"} if action == "accept" else None)
+
+                async with asyncio.timeout(15):
+                    async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                        result = await client.call_tool("greet", {})
+                        self.assertEqual(result.content[0].text, expected)
+                        self.assertEqual(len(seen), 1)
+
+    async def test_greet_without_form_support(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                result = await client.call_tool("greet", {})
+                self.assertTrue(result.is_error)
+                self.assertIn("does not support form elicitation", result.content[0].text)
+
+    async def test_greet_reasks_for_invalid_content(self):
+        answers = iter([{"name": ""}, {"name": "Ada"}])
+        seen = []
+
+        async def on_form(context, params):
+            seen.append(params)
+            return ElicitResult(action="accept", content=next(answers))
+
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                result = await client.call_tool("greet", {})
+                self.assertEqual(result.content[0].text, "Hello, Ada!")
+                self.assertEqual(len(seen), 2)
+
+    async def test_greet_tampered_state_is_rejected(self):
+        async def on_form(context, params):
+            return ElicitResult(action="cancel")
+
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                pending = await client.session.call_tool("greet", {}, allow_input_required=True)
+                self.assertEqual(pending.result_type, "input_required")
+                payload = {
+                    "jsonrpc": "2.0", "id": 22, "method": "tools/call",
+                    "params": {
+                        "name": "greet", "arguments": {},
+                        "requestState": pending.request_state + "x",
+                        "inputResponses": {"form": {"action": "cancel"}},
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                            "io.modelcontextprotocol/clientCapabilities": {"elicitation": {"form": {}}},
+                        },
+                    },
+                }
+
+                def post_tampered():
+                    request = urllib.request.Request(URL, data=json.dumps(payload).encode(), headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream",
+                        "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                        "Mcp-Method": "tools/call", "Mcp-Name": "greet",
+                    })
+                    try:
+                        response = urllib.request.urlopen(request, timeout=10)
+                    except urllib.error.HTTPError as error:
+                        response = error
+                    with response:
+                        return response.status, response.read().decode()
+
+                status, body = await asyncio.to_thread(post_tampered)
+                self.assertEqual(status, 400)
+                self.assertEqual(json.loads(body)["error"]["code"], -32602)
+                self.assertNotIn(pending.request_state, body)
+
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ defmodule Portico.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
@@ -23,6 +23,7 @@ defmodule Portico.MixProject do
   defp deps do
     [
       {:plug, "~> 1.20"},
+      {:plug_crypto, "~> 2.1"},
       {:jsv, "~> 0.22.0"}
     ]
   end

@@ -64,6 +64,21 @@ defmodule Portico.Tool do
   failures instead. Reasons may be any Elixir term; avoid secrets in reasons
   because they appear in server logs.
 
+  For form elicitation, return `{:ok, form, application_state}` from `call/2`
+  and implement `handle_input/3`. Build the form with `Portico.Input.form/2`.
+  Application state is a UTF-8 string; Portico wraps it and the form in a signed,
+  expiring token. Configure a per-server key as described in `Portico.Elicitation`.
+
+  The optional `elicitation_verifier: &MyApp.Elicitation.verify/2` must be an
+  external function capture of arity two (including `&__MODULE__.verify/2`). It
+  runs only on elicitation replies and returns `{:ok, verified_state}` or
+  `{:error, reason}`. The default is `Portico.Elicitation.verify/2`.
+  `handle_input/3` receives `{:accept, content}`, `:decline`, or `:cancel`, the
+  verified application state, and the fresh request. The protected form schema
+  is checked automatically; missing or invalid answers reissue the form without
+  calling `handle_input/3`. A reply handler may finish, ask another form, or start
+  a stream. Streaming callbacks cannot return forms in this first slice.
+
   For streaming, return `{:noreply, data, :stream}` from `call/2` and implement
   the optional `handle_stream/2` callback:
 
@@ -89,12 +104,21 @@ defmodule Portico.Tool do
 
   @doc "Handles tool arguments and chooses an immediate result or streaming work."
   @callback call(map(), Portico.Request.t()) ::
-              {:ok, Portico.Result.t()} | {:error, term()} | {:noreply, term(), :stream}
+              {:ok, Portico.Result.t()}
+              | {:ok, Portico.Input.t(), String.t()}
+              | {:error, term()}
+              | {:noreply, term(), :stream}
 
   @doc "Runs request-scoped streaming work and returns the final result."
   @callback handle_stream(term(), Portico.Stream.t()) ::
               {:ok, Portico.Result.t()} | {:error, term()}
-  @optional_callbacks handle_stream: 2
+  @doc "Handles a validated form reply and state returned by the elicitation verifier."
+  @callback handle_input(Portico.Input.answer(), term(), Portico.Request.t()) ::
+              {:ok, Portico.Result.t()}
+              | {:ok, Portico.Input.t(), String.t()}
+              | {:error, term()}
+              | {:noreply, term(), :stream}
+  @optional_callbacks handle_stream: 2, handle_input: 3
 
   @doc false
   defmacro __using__(options) do
@@ -117,12 +141,18 @@ defmodule Portico.Tool do
     {validator, metadata} =
       env.module |> Module.get_attribute(:portico_tool_metadata) |> Map.pop!(:validator)
 
+    {verifier, metadata} = Map.pop!(metadata, :elicitation_verifier)
+
     quote do
       @doc false
       def __portico_tool__, do: unquote(Macro.escape(metadata))
 
       @doc false
       def __portico_validator__, do: unquote(Macro.escape(validator))
+
+      @doc false
+      def __portico_verify_input__(state, request),
+        do: unquote(Macro.escape(verifier)).(state, request)
     end
   end
 end

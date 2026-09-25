@@ -2,8 +2,8 @@ defmodule Portico.Protocol.Dispatcher do
   @moduledoc false
   require Logger
 
-  alias Portico.{Request, Result, Schema, Server}
-  alias Portico.Protocol.{Encoder, Error, Validation}
+  alias Portico.{Input, Request, Result, Schema, Server}
+  alias Portico.Protocol.{Elicitation, Encoder, Error, Validation}
 
   @supported_versions ["2026-07-28"]
 
@@ -42,6 +42,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, %{"method" => "tools/call", "params" => params}, context} ->
         case execute_call(server, params, context) do
           {:ok, result, _fields} -> {:ok, result}
+          {:input, form, state, _fields} -> {:ok, form, state}
+          {:input_error, reason} -> {:error, reason}
           {:callback_error, reason} -> {:error, reason}
           {:stream, _} = stream -> stream
           {:error, _reason} = error -> error
@@ -126,12 +128,18 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
+      {:input_error, _reason} ->
+        {:reply, Error.response(:invalid_params, request.id)}
+
       {:callback_error, reason} ->
         Logger.error(fn -> "Portico tool callback failed: #{inspect(reason)}" end)
         {:reply, Error.response(:internal_error, request.id)}
 
       {:error, _reason} ->
         {:reply, Error.response(:internal_error, request.id)}
+
+      {:input, _form, _state, fields} ->
+        response(server, request.id, fields)
 
       {:ok, _result, fields} ->
         complete(server, request.id, fields)
@@ -144,11 +152,32 @@ defmodule Portico.Protocol.Dispatcher do
   end
 
   defp execute_call(server, params, request) do
-    with {:ok, name, arguments} <- Validation.tool_call(params),
-         {:ok, result} <- invoke_tool(server, name, arguments, request) do
-      case Encoder.tool_result(result) do
-        {:ok, fields} -> {:ok, result, fields}
-        {:error, _reason} = error -> error
+    with {:ok, name, arguments} <- Validation.tool_call(params) do
+      request = %{request | server: server, tool_name: name, arguments: arguments}
+
+      case invoke_tool(server, name, arguments, request, Elicitation.retry(params)) do
+        {:ok, %Result{} = result} ->
+          case Encoder.tool_result(result) do
+            {:ok, fields} -> {:ok, result, fields}
+            {:error, _} = error -> error
+          end
+
+        {:ok, %Input{} = form, state} ->
+          case Elicitation.encode(form, state, request) do
+            {:ok, form, fields} ->
+              {:input, form, fields["requestState"], fields}
+
+            {:error, :form_not_supported} ->
+              {:ok, result} = Result.error("This client does not support form elicitation.")
+              {:ok, fields} = Encoder.tool_result(result)
+              {:ok, result, fields}
+
+            error ->
+              error
+          end
+
+        outcome ->
+          outcome
       end
     end
   end
@@ -163,7 +192,10 @@ defmodule Portico.Protocol.Dispatcher do
   end
 
   @doc false
-  def complete(server, id, fields) do
+  def complete(server, id, fields),
+    do: response(server, id, Map.put(fields, "resultType", "complete"))
+
+  defp response(server, id, fields) do
     info = Server.info(server)
 
     {:reply,
@@ -172,7 +204,6 @@ defmodule Portico.Protocol.Dispatcher do
        "id" => id,
        "result" =>
          Map.merge(fields, %{
-           "resultType" => "complete",
            "_meta" => %{
              "io.modelcontextprotocol/serverInfo" => %{
                "name" => info.name,
@@ -192,7 +223,7 @@ defmodule Portico.Protocol.Dispatcher do
   defp readable_id(_message), do: nil
 
   @spec call_tool(module(), String.t(), map(), Request.t()) ::
-          {:ok, Result.t()} | {:stream, map()} | {:error, term()}
+          {:ok, Result.t()} | {:ok, Input.t(), String.t()} | {:stream, map()} | {:error, term()}
   def call_tool(server, name, arguments, %Request{} = request) do
     with {:ok, name, arguments} <-
            Validation.tool_call(%{"name" => name, "arguments" => arguments}) do
@@ -205,7 +236,10 @@ defmodule Portico.Protocol.Dispatcher do
 
   def call_tool(_server, _name, _arguments, _request), do: {:error, :invalid_params}
 
-  defp invoke_tool(server, name, arguments, request) do
+  defp invoke_tool(server, name, arguments, request, retry \\ :initial)
+  defp invoke_tool(_server, _name, _arguments, _request, {:error, _} = error), do: error
+
+  defp invoke_tool(server, name, arguments, request, retry) do
     case Enum.find(Server.tools(server), &(&1.name == name)) do
       nil ->
         {:error, :unknown_tool}
@@ -213,9 +247,17 @@ defmodule Portico.Protocol.Dispatcher do
       %{module: module} ->
         case Schema.validate(module.__portico_validator__(), arguments) do
           :ok ->
-            case module.call(arguments, request) do
+            case run_callback(module, arguments, request, retry) do
+              {:ok, %Input{} = form, state} ->
+                if function_exported?(module, :handle_input, 3),
+                  do: {:ok, form, state},
+                  else: {:error, :missing_input_callback}
+
               {:ok, %Result{}} = reply ->
                 reply
+
+              {:input_error, _} = error ->
+                error
 
               {:error, reason} ->
                 {:callback_error, reason}
@@ -236,4 +278,49 @@ defmodule Portico.Protocol.Dispatcher do
         end
     end
   end
+
+  defp run_callback(module, arguments, request, :initial), do: module.call(arguments, request)
+
+  defp run_callback(module, _arguments, request, {:resume, answer, state}) do
+    cond do
+      not Elicitation.supported?(request) ->
+        Result.error("This client does not support form elicitation.")
+
+      not function_exported?(module, :handle_input, 3) ->
+        {:error, :missing_input_callback}
+
+      true ->
+        with {:ok, envelope} <- open_input(state, request),
+             {:ok, verified_state} <- verify_input(module, state, request) do
+          case validate_answer(answer, envelope.form) do
+            :ok -> module.handle_input(answer, verified_state, request)
+            :retry -> {:ok, envelope.form, envelope.state}
+          end
+        end
+    end
+  end
+
+  defp open_input(state, request) do
+    case Portico.Elicitation.open(state, request) do
+      {:error, :invalid_request_state} -> {:input_error, :invalid_request_state}
+      other -> other
+    end
+  end
+
+  defp verify_input(module, state, request) do
+    case module.__portico_verify_input__(state, request) do
+      {:ok, _} = ok -> ok
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_verifier_return}
+    end
+  end
+
+  defp validate_answer(:missing, _form), do: :retry
+
+  defp validate_answer({:accept, content}, form) do
+    {_schema, validator} = Schema.build!(form.schema, __ENV__)
+    if Schema.valid?(validator, content), do: :ok, else: :retry
+  end
+
+  defp validate_answer(_answer, _form), do: :ok
 end

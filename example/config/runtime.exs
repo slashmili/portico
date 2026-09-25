@@ -11,3 +11,10 @@ config :portico_example,
     System.get_env("ALLOWED_ORIGINS", "")
     |> String.split(",", trim: true)
     |> Enum.map(&String.trim/1)
+
+# Stable across restarts/instances when supplied. The fallback is for the local
+# showcase only: a fresh VM generates a new key and invalidates open forms.
+# Recompiling or restarting the application inside the same VM retains the key.
+config :portico, PorticoExample.MCP,
+  elicitation_key:
+    System.get_env("ELICITATION_KEY") || Base.encode64(:crypto.strong_rand_bytes(32))

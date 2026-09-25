@@ -122,6 +122,12 @@ defmodule Portico.Test do
   completion. `timeout:` bounds streaming work (default 5,000 milliseconds);
   expiry stops the task and returns `{:error, :timeout}`.
 
+  Form calls return `{:ok, %Portico.Input{}, wire_state}`. To submit a reply,
+  call the same tool and arguments with `request_state: wire_state` and
+  `input_responses: %{"form" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}`.
+  Declare `%{"elicitation" => %{"form" => %{}}}` in the context's client
+  capabilities. The helper uses the same verification and schema checks as HTTP.
+
   Supply `on_progress: fn update -> ... end` to collect progress. The helper
   supplies a progress token and calls this function in the test process, with
   an atom-keyed map containing `:progress` and optional `:total`/`:message`.
@@ -134,7 +140,7 @@ defmodule Portico.Test do
 
   """
   @spec call_tool(module() | Context.t(), String.t(), map(), keyword()) ::
-          {:ok, Result.t()} | {:error, term()}
+          {:ok, Result.t()} | {:ok, Portico.Input.t(), String.t()} | {:error, term()}
   def call_tool(target, name, arguments, options \\ [])
 
   def call_tool(%Context{server: server, assigns: defaults} = context, name, arguments, options) do
@@ -172,7 +178,16 @@ defmodule Portico.Test do
       "jsonrpc" => "2.0",
       "id" => 1,
       "method" => "tools/call",
-      "params" => %{"name" => name, "arguments" => arguments, "_meta" => metadata}
+      "params" =>
+        Enum.reduce(
+          [request_state: "requestState", input_responses: "inputResponses"],
+          %{"name" => name, "arguments" => arguments, "_meta" => metadata},
+          fn {option, key}, params ->
+            if Keyword.has_key?(options, option),
+              do: Map.put(params, key, options[option]),
+              else: params
+          end
+        )
     }
 
     case Dispatcher.call_tool_request(
@@ -180,6 +195,7 @@ defmodule Portico.Test do
            message,
            Map.merge(context.assigns, options[:assigns])
          ) do
+      {:ok, _form, _state} = reply -> reply
       {:ok, _result} = reply -> reply
       {:stream, execution} -> collect_stream(execution, options)
       {:error, _reason} = error -> error
@@ -205,7 +221,9 @@ defmodule Portico.Test do
 
   defp validate_options(options) do
     if Keyword.keyword?(options) and
-         Enum.all?(options, fn {key, _} -> key in [:assigns, :on_progress, :timeout] end) do
+         Enum.all?(options, fn {key, _} ->
+           key in [:assigns, :on_progress, :timeout, :request_state, :input_responses]
+         end) do
       options = Keyword.merge([assigns: %{}, on_progress: nil, timeout: 5_000], options)
 
       cond do

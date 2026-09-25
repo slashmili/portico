@@ -294,6 +294,7 @@ defmodule Portico.PlugTest do
       "text" => "visible",
       "Password" => "password-value",
       "nested" => [%{"access_token" => "token-value", "email" => "email-value"}],
+      "requestState" => "continuation-value",
       "api_key" => "key-value"
     }
 
@@ -320,7 +321,14 @@ defmodule Portico.PlugTest do
       refute log =~ "visible"
       assert log =~ "[FILTERED]"
 
-      for secret <- ["password-value", "token-value", "email-value", "key-value", "assign-value"] do
+      for secret <- [
+            "password-value",
+            "token-value",
+            "email-value",
+            "key-value",
+            "assign-value",
+            "continuation-value"
+          ] do
         refute log =~ secret
       end
 

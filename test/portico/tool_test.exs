@@ -10,6 +10,10 @@ defmodule Portico.ToolTest do
           {[input_schema: %{}, description: <<255>>],
            "expected :description to be a UTF-8 string"},
           {[input_schema: %{}, name: "add"], "unknown tool option :name"},
+          {[input_schema: %{}, elicitation_verifier: nil],
+           "expected :elicitation_verifier to be an external function capture of arity 2"},
+          {[input_schema: %{}, elicitation_verifier: &String.trim/1],
+           "expected :elicitation_verifier to be an external function capture of arity 2"},
           {[input_schema: %{}, typo: true], "unknown tool option :typo"},
           {[input_schema: %{}, input_schema: %{}], "duplicate tool option :input_schema"},
           {%{}, "expected tool options to be a keyword list"}

@@ -26,7 +26,7 @@ defmodule Portico.Plug do
     * `:filter_parameters` — additional parameter key fragments to redact in
       logs, default `[]`. Matching is case-insensitive and recursive through
       maps and lists. Keys containing `password`, `secret`, `token`,
-      `authorization`, or `api_key` are always replaced with `"[FILTERED]"`.
+      `authorization`, `api_key`, or `requeststate` are always replaced with `"[FILTERED]"`.
       This filters by key, not by value; add fragments for application secrets.
 
   Invalid configuration raises during `init/1` so declaration mistakes fail fast.
@@ -108,7 +108,8 @@ defmodule Portico.Plug do
              )
 
     filters =
-      ["password", "secret", "token", "authorization", "api_key"] ++ options[:filter_parameters]
+      ["password", "secret", "token", "authorization", "api_key", "requeststate"] ++
+        options[:filter_parameters]
 
     options |> Map.new() |> Map.put(:filter_parameters, Enum.map(filters, &String.downcase/1))
   end

@@ -294,3 +294,82 @@ assert_received {:progress, %{progress: 1, total: 3}}
 The helper's streaming timeout defaults to 5,000 milliseconds and stops unfinished
 work before returning `{:error, :timeout}`. Application exceptions propagate in tests. `handle_stream/2` is
 optional for tools that always return normal replies.
+
+
+## Ask for a name with a form
+
+The `greet` tool demonstrates form elicitation. Use an MCP client supporting
+2026-07-28 form elicitation; it displays the form and retries the tool with the
+answer. The Python E2E suite exercises accept, decline, cancel, invalid content,
+and tampered state. There is no browser page or waiting server process.
+
+```elixir
+use Portico.Tool,
+  input_schema: %{type: "object", properties: %{}, additionalProperties: false},
+  elicitation_verifier: &__MODULE__.verify_input/2
+
+def call(_arguments, _request) do
+  {:ok, form} = Portico.Input.form("What is your name?",
+    schema: %{
+      type: "object",
+      properties: %{name: %{type: "string", minLength: 1}},
+      required: ["name"]
+    })
+
+  {:ok, form, "greet:v1"}
+end
+
+def verify_input(token, request) do
+  with {:ok, state} <- Portico.Elicitation.verify(token, request) do
+    if state == "greet:v1", do: {:ok, state}, else: {:error, :invalid_greeting_state}
+  end
+end
+
+def handle_input({:accept, %{"name" => name}}, "greet:v1", _request) do
+  {:ok, result} = Portico.Result.text("Hello, #{name}!")
+  {:ok, result}
+end
+```
+
+Also handle `:decline` and `:cancel`; the runnable tool includes both. Omit
+`elicitation_verifier:` to use the built-in verifier. A custom function receives
+the wire token and fresh request, returning `{:ok, application_state}` or
+`{:error, reason}`. It runs only on form replies. Portico always verifies the
+protected form envelope and validates accepted content; missing or invalid
+answers cause the form to be requested again without running `handle_input/3`.
+
+Configure the library signing key per server at runtime:
+
+```elixir
+config :portico, MyApp.MCP,
+  elicitation_key: System.fetch_env!("ELICITATION_KEY")
+```
+
+Use at least 32 random bytes. The example creates an ephemeral key when
+`ELICITATION_KEY` is absent; launching a fresh VM then invalidates pending forms.
+`recompile()` or stopping/starting the application inside the same IEx VM retains
+the key and pending forms remain valid until expiry. With a stable
+`ELICITATION_KEY`, valid forms also survive fresh VM restarts. This behavior is
+the same with or without a custom verifier. A stable key shared by instances
+allows retries across those instances. Tokens expire
+in five minutes and bind the server, tool, original arguments, form, and state.
+They are signed, not encrypted or single-use. Do not put secrets in state.
+Application-specific identity checks and one-time execution remain application
+responsibilities; the custom verifier can enforce identity using fresh assigns.
+`requestState` is redacted from Portico's parameter logs.
+
+This first slice supports one form at a time with flat string, number, integer,
+and boolean fields. URL forms, enum selectors, and forms returned by streaming
+callbacks are not implemented. String `format` remains an annotation, as with
+tool schemas. Clients without form capability receive a completed tool error.
+
+Direct tests can use the same retry flow:
+
+```elixir
+mcp = %{mcp | client_capabilities: %{"elicitation" => %{"form" => %{}}}}
+{:ok, form, state} = call_tool mcp, "greet", %{}
+{:ok, result} = call_tool mcp, "greet", %{},
+  request_state: state,
+  input_responses: %{"form" => %{"action" => "accept", "content" => %{"name" => "Ada"}}}
+assert_text result, "Hello, Ada!"
+```

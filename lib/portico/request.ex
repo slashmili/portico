@@ -10,11 +10,17 @@ defmodule Portico.Request do
   valid default metadata, configurable through `Portico.Test.Context`. Client information
   and capabilities describe the caller's claims, not authenticated identity.
 
+  Tool execution also fills `server`, `tool_name`, and `arguments`. These identify
+  the operation when checking elicitation continuations.
+
   This struct does not authenticate its contents. The host application is
   responsible for establishing identity before assigning it to a request.
   """
 
   defstruct [
+    :server,
+    :tool_name,
+    :arguments,
     :id,
     :method,
     :protocol_version,
@@ -25,6 +31,9 @@ defmodule Portico.Request do
   ]
 
   @type t :: %__MODULE__{
+          server: module() | nil,
+          tool_name: String.t() | nil,
+          arguments: map() | nil,
           id: String.t() | integer() | nil,
           method: String.t() | nil,
           protocol_version: String.t() | nil,

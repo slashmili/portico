@@ -34,7 +34,7 @@ defmodule Portico.Server.Compiler do
   end
 
   def tool_metadata!(options, env) do
-    options!(options, [:description, :input_schema], "tool", env)
+    options!(options, [:description, :input_schema, :elicitation_verifier], "tool", env)
     schema = Keyword.get(options, :input_schema)
 
     unless is_map(schema) and not is_struct(schema) do
@@ -42,7 +42,13 @@ defmodule Portico.Server.Compiler do
     end
 
     {schema, validator} = Portico.Schema.build!(schema, env)
-    definition = %{input_schema: schema, validator: validator}
+    verifier = Keyword.get(options, :elicitation_verifier, &Portico.Elicitation.verify/2)
+
+    unless is_function(verifier, 2) and Function.info(verifier, :type) == {:type, :external} do
+      error!(env, "expected :elicitation_verifier to be an external function capture of arity 2")
+    end
+
+    definition = %{input_schema: schema, validator: validator, elicitation_verifier: verifier}
 
     case Keyword.fetch(options, :description) do
       {:ok, description} ->

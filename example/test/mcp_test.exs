@@ -37,4 +37,22 @@ defmodule PorticoExample.MCPTest do
     assert_text result, "3"
     for n <- 1..3, do: assert_received({:progress, %{progress: ^n, total: 3}})
   end
+
+  test "greet asks a form then accepts, declines or cancels", %{mcp: mcp} do
+    mcp = %{mcp | client_capabilities: %{"elicitation" => %{"form" => %{}}}}
+    {:ok, %Portico.Input{}, state} = call_tool mcp, "greet", %{}
+
+    for {action, content, text} <- [
+          {"accept", %{"name" => "Ada"}, "Hello, Ada!"},
+          {"decline", %{}, "Name declined."},
+          {"cancel", %{}, "Cancelled."}
+        ] do
+      {:ok, result} =
+        call_tool mcp, "greet", %{},
+          request_state: state,
+          input_responses: %{"form" => %{"action" => action, "content" => content}}
+
+      assert_text result, text
+    end
+  end
 end
