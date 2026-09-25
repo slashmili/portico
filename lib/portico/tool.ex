@@ -55,11 +55,35 @@ defmodule Portico.Tool do
 
   This returns a completed result with `isError: true`. Unexpected callback
   exceptions remain generic protocol errors over HTTP and propagate in tests.
+
+  For streaming, return `{:noreply, data, :stream}` from `call/2` and implement
+  the optional `handle_stream/2` callback:
+
+      def call(%{"to" => to}, _request), do: {:noreply, to, :stream}
+
+      def handle_stream(to, stream) do
+        for n <- 1..to, do: Portico.Stream.send(stream, {:progress, n, total: to})
+        {:ok, Portico.Result.text("Finished")}
+
+  Each invocation chooses its response type. `call/2` runs in the request
+  process; keep it short and put long-running work in `handle_stream/2`.
+  Portico runs that callback in a linked task and provides the original request
+  as `stream.request`. No GenServer, permanent tool process, or session is created.
+  The data is an ordinary Elixir value and is not serialized or retained for retries.
+
+  The callback must return `{:ok, %Portico.Result{}}`, including for expected
+  failures. It cannot start another stream. Portico stops its task on timeout
+  or detected disconnect. Detached work started by application code is outside
+  this task's lifetime; cancellation does not undo effects already performed.
   """
 
-  @doc "Handles tool arguments with application context and returns a completed result."
+  @doc "Handles tool arguments and chooses an immediate result or streaming work."
   @callback call(map(), Portico.Request.t()) ::
-              {:ok, Portico.Result.t()}
+              {:ok, Portico.Result.t()} | {:noreply, term(), :stream}
+
+  @doc "Runs request-scoped streaming work and returns the final result."
+  @callback handle_stream(term(), Portico.Stream.t()) :: {:ok, Portico.Result.t()}
+  @optional_callbacks handle_stream: 2
 
   @doc false
   defmacro __using__(options) do

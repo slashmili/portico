@@ -9,13 +9,15 @@ defmodule Portico.Protocol.Dispatcher do
   @doc """
   Processes a decoded protocol message through the current validation stages.
 
-  Returns a JSON-ready reply or `:no_response` for a valid notification.
+  Returns a JSON-ready reply, a deferred stream execution, or `:no_response`
+  for a valid notification.
   Optional application assigns are copied into the fresh request context.
   Envelope errors take precedence over request metadata errors. Notifications
   are ignored; no notification handlers are implemented yet.
 
   Checks the protocol version on every request before method lookup. Currently
-  `server/discover`, `tools/list`, and completed text `tools/call` are implemented.
+  `server/discover`, `tools/list`, and text `tools/call` are implemented, including
+  optional request-scoped streaming.
   Discovery advertises basic tools support. Listing returns the whole
   static catalog in name order and issues no pagination cursors. Discovery and
   listing use private cache scope with zero TTL (immediately stale). This is an incremental
@@ -24,7 +26,7 @@ defmodule Portico.Protocol.Dispatcher do
   coercion; schema failures return a completed tool error. Test helpers use `call_tool_request/3`
   for the same validation and execution with exceptions left visible to tests.
   """
-  @spec dispatch(module(), term(), map()) :: {:reply, map()} | :no_response
+  @spec dispatch(module(), term(), map()) :: {:reply, map()} | {:stream, map()} | :no_response
   def dispatch(server, message, assigns \\ %{}) when is_map(assigns) do
     case prepare(message, assigns) do
       {:ok, message, context} -> dispatch_method(server, message, context)
@@ -39,6 +41,7 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, %{"method" => "tools/call", "params" => params}, context} ->
         case execute_call(server, params, context) do
           {:ok, result, _fields} -> {:ok, result}
+          {:stream, _} = stream -> stream
           {:error, _reason} = error -> error
         end
 
@@ -73,6 +76,7 @@ defmodule Portico.Protocol.Dispatcher do
               method: request["method"],
               protocol_version: version,
               client_info: metadata["io.modelcontextprotocol/clientInfo"],
+              progress_token: metadata["progressToken"],
               client_capabilities: metadata["io.modelcontextprotocol/clientCapabilities"],
               assigns: assigns
             }
@@ -122,6 +126,9 @@ defmodule Portico.Protocol.Dispatcher do
 
       {:ok, _result, fields} ->
         complete(server, request.id, fields)
+
+      {:stream, execution} ->
+        {:stream, execution}
     end
   rescue
     _error -> {:reply, Error.response(:internal_error, request.id)}
@@ -146,7 +153,8 @@ defmodule Portico.Protocol.Dispatcher do
     end
   end
 
-  defp complete(server, id, fields) do
+  @doc false
+  def complete(server, id, fields) do
     info = Server.info(server)
 
     {:reply,
@@ -175,7 +183,7 @@ defmodule Portico.Protocol.Dispatcher do
   defp readable_id(_message), do: nil
 
   @spec call_tool(module(), String.t(), map(), Request.t()) ::
-          {:ok, Result.t()} | {:error, :unknown_tool}
+          {:ok, Result.t()} | {:stream, map()} | {:error, :unknown_tool}
   def call_tool(server, name, arguments, %Request{} = request) when is_binary(name) do
     unless is_map(arguments) and not is_struct(arguments) do
       raise ArgumentError, "expected tool arguments to be a plain map"
@@ -192,10 +200,16 @@ defmodule Portico.Protocol.Dispatcher do
               {:ok, %Result{}} = reply ->
                 reply
 
+              {:noreply, data, :stream} ->
+                unless function_exported?(module, :handle_stream, 2),
+                  do: raise(ArgumentError, "streaming tool must implement handle_stream/2")
+
+                {:stream, %{module: module, data: data, request: request, server: server}}
+
               _other ->
                 raise ArgumentError,
                       "invalid return from #{inspect(module)}.call/2; " <>
-                        "expected {:ok, %Portico.Result{}}"
+                        "expected {:ok, %Portico.Result{}} or {:noreply, data, :stream}"
             end
 
           {:error, message} ->

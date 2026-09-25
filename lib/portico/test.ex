@@ -112,14 +112,34 @@ defmodule Portico.Test do
   Schema-invalid argument objects return `Portico.Result.error/1` without
   running the callback. Malformed argument containers remain request errors.
 
-  Only `{:ok, %Portico.Result{}}` outcomes are supported. This helper returns
-  the result, including its `is_error` flag for expected tool failures.
+  Handles immediate results and `{:noreply, data, :stream}` outcomes, returning
+  the final result including its `is_error` flag. Streaming uses the same worker
+  and progress validation as HTTP. `timeout:` bounds streaming work (default
+  5,000 milliseconds); expiry stops the task and raises.
+
+  Supply `on_progress: fn update -> ... end` to collect progress. The helper
+  supplies a progress token and calls this function in the test process, with
+  an atom-keyed map containing `:progress` and optional `:total`/`:message`.
+  Exceptions in the callback stop the worker and propagate to the test.
+
+      result = call_tool mcp, "count", %{"to" => 3},
+        on_progress: fn update -> send(self(), {:progress, update}) end
+      assert_text result, "3"
+      assert_received {:progress, %{progress: 1, total: 3}}
+
   """
   @spec call_tool(module() | Context.t(), String.t(), map(), keyword()) :: Result.t()
   def call_tool(target, name, arguments, options \\ [])
 
   def call_tool(%Context{server: server, assigns: defaults} = context, name, arguments, options) do
-    options = Keyword.validate!(options, assigns: %{})
+    options = Keyword.validate!(options, assigns: %{}, on_progress: nil, timeout: 5_000)
+
+    unless is_integer(options[:timeout]) and options[:timeout] > 0,
+      do: raise(ArgumentError, "expected a positive :timeout in milliseconds")
+
+    unless is_nil(options[:on_progress]) or is_function(options[:on_progress], 1),
+      do: raise(ArgumentError, "expected :on_progress to be a function of one argument")
+
     assigns = Keyword.fetch!(options, :assigns)
     validate_assigns!(defaults)
     validate_assigns!(assigns)
@@ -134,6 +154,11 @@ defmodule Portico.Test do
         do: metadata,
         else: Map.put(metadata, "io.modelcontextprotocol/clientInfo", context.client_info)
 
+    metadata =
+      if options[:on_progress],
+        do: Map.put(metadata, "progressToken", System.unique_integer([:positive])),
+        else: metadata
+
     message = %{
       "jsonrpc" => "2.0",
       "id" => 1,
@@ -143,6 +168,7 @@ defmodule Portico.Test do
 
     case Dispatcher.call_tool_request(server, message, Map.merge(defaults, assigns)) do
       {:ok, result} -> result
+      {:stream, execution} -> collect_stream(execution, options)
       {:error, :unknown_tool} -> raise ArgumentError, "unknown tool #{inspect(name)}"
       {:error, reason} -> raise ArgumentError, "invalid tool request: #{inspect(reason)}"
     end
@@ -150,6 +176,22 @@ defmodule Portico.Test do
 
   def call_tool(server, name, arguments, options) when is_atom(server) do
     call_tool(%Context{server: server}, name, arguments, options)
+  end
+
+  defp collect_stream(execution, options) do
+    emit = fn
+      {:progress, progress}, acc ->
+        options[:on_progress].(progress)
+        {:ok, acc}
+
+      :heartbeat, acc ->
+        {:ok, acc}
+    end
+
+    case Portico.Stream.Runner.run(execution, nil, emit, options[:timeout]) do
+      {:ok, result, _} -> result
+      {:failed, kind, reason, stack, _} -> :erlang.raise(kind, reason, stack)
+    end
   end
 
   defp validate_assigns!(assigns) do

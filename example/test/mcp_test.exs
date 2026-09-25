@@ -24,4 +24,16 @@ defmodule PorticoExample.MCPTest do
       assert_text result, "Tool arguments do not match the input schema. " <> detail
     end
   end
+
+  test "count chooses a normal reply or streams progress", %{mcp: mcp} do
+    assert_text call_tool(mcp, "count", %{"to" => 1}), "1"
+    owner = self()
+
+    result =
+      call_tool mcp, "count", %{"to" => 3},
+        on_progress: fn progress -> send(owner, {:progress, progress}) end
+
+    assert_text result, "3"
+    for n <- 1..3, do: assert_received({:progress, %{progress: ^n, total: 3}})
+  end
 end

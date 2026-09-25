@@ -1,6 +1,6 @@
 defmodule Portico.Plug do
   @moduledoc """
-  Serves completed MCP JSON responses through a host application's HTTP listener.
+  Serves MCP JSON responses and request-scoped SSE streams through a host listener.
 
   Mount in a Phoenix router (outside a browser/CSRF pipeline):
 
@@ -20,6 +20,9 @@ defmodule Portico.Plug do
     * `:assigns` — atom keys to copy from `conn.assigns` into each fresh
       `Portico.Request`, default `[]`. Run authentication plugs before this plug.
     * `:max_body_bytes` — raw JSON body limit, default 1,000,000 bytes.
+    * `:stream_timeout` — maximum streaming execution time in milliseconds,
+      default 30,000. Must be a positive integer. Network write timeouts belong
+      to the host HTTP server.
     * `:filter_parameters` — additional parameter key fragments to redact in
       logs, default `[]`. Matching is case-insensitive and recursive through
       maps and lists. Keys containing `password`, `secret`, `token`,
@@ -39,10 +42,17 @@ defmodule Portico.Plug do
   15 seconds per read; the host owns overall request timeouts.
 
   Clients must send JSON and accept both `application/json` and
-  `text/event-stream`, as required by MCP 2026-07-28. This initial adapter
-  returns JSON only. Valid notifications are ignored with an empty 202 response.
+  `text/event-stream`, as required by MCP 2026-07-28. Tools choose JSON or SSE
+  per invocation. Progress is sent only when the request supplies a progress
+  token. Streams end with one final JSON-RPC response; failures after streaming
+  starts use a sanitized error event within the HTTP 200 stream.
+
+  SSE comments are sent every second during silent work to detect disconnected
+  clients; detection timing depends on the HTTP server and network. Task cleanup
+  also runs when the request exits or times out. Valid notifications are ignored
+  with an empty 202 response.
   All responses halt the connection. No listener, sessions, CORS response headers,
-  streaming, or authentication scheme are installed by this plug. Custom `Mcp-Param`
+  or authentication scheme are installed by this plug. Custom `Mcp-Param`
   header annotations are not supported yet.
   """
 
@@ -60,6 +70,7 @@ defmodule Portico.Plug do
         allowed_origins: [],
         assigns: [],
         max_body_bytes: 1_000_000,
+        stream_timeout: 30_000,
         filter_parameters: []
       )
 
@@ -77,6 +88,9 @@ defmodule Portico.Plug do
 
     unless is_integer(options[:max_body_bytes]) and options[:max_body_bytes] > 0,
       do: raise(ArgumentError, "expected :max_body_bytes to be a positive integer")
+
+    unless is_integer(options[:stream_timeout]) and options[:stream_timeout] > 0,
+      do: raise(ArgumentError, "expected :stream_timeout to be a positive integer")
 
     unless is_list(options[:filter_parameters]) and
              Enum.all?(
@@ -201,8 +215,14 @@ defmodule Portico.Plug do
         assigns = Map.take(conn.assigns, options.assigns)
 
         case Dispatcher.dispatch(options.server, message, assigns) do
-          :no_response -> finish(conn, 202)
-          {:reply, response} -> reply(conn, response)
+          :no_response ->
+            finish(conn, 202)
+
+          {:reply, response} ->
+            reply(conn, response)
+
+          {:stream, execution} ->
+            Portico.Transport.SSE.call(conn, execution, options.stream_timeout)
         end
     end
   end

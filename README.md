@@ -17,11 +17,12 @@ application owns the HTTP listener; Portico does not start one automatically.
 See the [runnable example](example/README.md) for a complete tool, a local Bandit
 server, and real HTTP tests using the official Python MCP client.
 
-Current support: discovery, tool listing, and completed text tool calls through
+Current support: discovery, tool listing, and text tool calls through
 `Portico.Plug`, including explicit tool errors with `Portico.Result.error/1`.
 Schema declarations are checked at compile time against Draft 2020-12, and
-arguments are validated before callbacks run. Streaming and elicitation remain
-in progress.
+arguments are validated before callbacks run. Tools can choose JSON replies or
+request-scoped progress streams with `{:noreply, data, :stream}` and
+`handle_stream/2`. Form elicitation remains planned.
 
 Run library checks with:
 

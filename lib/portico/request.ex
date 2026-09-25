@@ -6,7 +6,7 @@ defmodule Portico.Request do
   with a fresh request; assigns are not retained between requests.
 
   Protocol invocation fills `id`, `method`, `protocol_version`, `client_info`,
-  and `client_capabilities` from checked request metadata. Test helpers supply
+  `client_capabilities`, and optional `progress_token` from checked request metadata. Test helpers supply
   valid default metadata, configurable through `Portico.Test.Context`. Client information
   and capabilities describe the caller's claims, not authenticated identity.
 
@@ -19,6 +19,7 @@ defmodule Portico.Request do
     :method,
     :protocol_version,
     :client_info,
+    :progress_token,
     client_capabilities: %{},
     assigns: %{}
   ]
@@ -28,6 +29,7 @@ defmodule Portico.Request do
           method: String.t() | nil,
           protocol_version: String.t() | nil,
           client_info: map() | nil,
+          progress_token: String.t() | integer() | nil,
           client_capabilities: map(),
           assigns: %{optional(atom()) => term()}
         }

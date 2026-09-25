@@ -1,6 +1,6 @@
 # Portico example
 
-A standalone Elixir application exposing one MCP tool, `add`, over real HTTP.
+A standalone Elixir application exposing `add` and `count` MCP tools over real HTTP.
 It depends on Portico via `path: ".."` and owns its Bandit listener.
 
 ## Run
@@ -74,9 +74,10 @@ python3 -m venv .venv
 ```
 
 The suite pins the [official MCP SDK](https://pypi.org/project/mcp/2.2.0/) to
-`2.2.0`. It checks discovery, the advertised tool/schema, and `add` with positive,
+`2.2.0`. It checks discovery, the advertised tools/schemas, and `add` with positive,
 negative, and zero inputs, plus expected errors for invalid inputs, through the
-SDK over HTTP. Each connection asserts
+SDK over HTTP. It also checks `count` with immediate replies, streamed progress,
+completion without a progress callback, and invalid arguments. Each connection asserts
 protocol version `2026-07-28`; fallback to another version fails the test.
 No mocks or substituted protocol messages are used. By default, the suite starts
 a freshly compiled Elixir server on an OS-assigned loopback port and stops it
@@ -94,7 +95,9 @@ When adding a tool to this showcase, add its real-client tests to `e2e/` too.
 Only point the suite at an instance you intend to exercise. Discovery and listing
 currently advertise private cache scope with zero TTL (immediately stale).
 
-The local Elixir test uses the library's shipped helper and needs no listener:
+Tool tests use the library's shipped helper without a listener. A separate
+disconnect test starts an ephemeral Bandit listener and verifies that closing
+a real HTTP connection stops a silent worker:
 
 ```sh
 mix test --warnings-as-errors
@@ -105,6 +108,7 @@ mix format --check-formatted
 
 - `lib/portico_example/mcp.ex` — the route-like tool declarations.
 - `lib/portico_example/tools/add.ex` — raw JSON Schema and the tool callback.
+- `lib/portico_example/tools/count.ex` — immediate replies and streaming callbacks.
 - `lib/portico_example/router.ex` — mounts Portico at `/mcp`.
 - `lib/portico_example/application.ex` — starts the listener under supervision.
 - `config/runtime.exs` — port, Origin allowlist, and no listener during unit tests.
@@ -112,7 +116,7 @@ mix format --check-formatted
 - `e2e/test_mcp.py` — real Python client interoperability tests.
 
 This is the first manual-testing checkpoint. Discovery, listing, and completed
-text tool calls work; streaming and elicitation are still pending. Schemas are
+text tool calls and progress streams work; elicitation is still pending. Schemas are
 checked at compile time as Draft 2020-12, normalized, and advertised. Arguments
 are validated before callbacks run. The `add` callback only performs arithmetic;
 Portico handles missing fields, wrong types, and extra properties.
@@ -121,7 +125,7 @@ Custom `Mcp-Param` annotations are also pending.
 
 ## Expected tool failures
 
-Callbacks always return `{:ok, %Portico.Result{}}`. The request is passed in for
+Completed callbacks return `{:ok, %Portico.Result{}}`. The request is passed in for
 context but is not returned. `:ok` means the callback produced a result;
 `result.is_error` says whether the tool succeeded. For an expected failure:
 
@@ -184,6 +188,88 @@ Draft 2020-12 validator. These targeted tests are not full conformance testing.
 Argument validation preserves submitted values and does not insert defaults.
 JSON Schema treats `2.0` as an integer; the example accepts it and formats the sum
 as an integer. Fractional values such as `2.5`, numeric strings, booleans, and null
-are rejected for this tool. Python E2E checks these cases. Error messages are
-currently fixed and do not echo argument values; field-specific diagnostics are
-a later improvement.
+are rejected for this tool. Python E2E checks these cases. Error messages identify field paths and reasons without echoing argument values.
+
+
+## Choose a reply or a progress stream
+
+The `count` tool returns a normal reply for `to: 1`. Larger counts return
+`{:noreply, data, :stream}` and run `handle_stream/2` in a request-owned task:
+
+```elixir
+@impl true
+def call(%{"to" => to}, _request) when to == 1,
+  do: {:ok, Portico.Result.text("1")}
+
+def call(%{"to" => to}, _request), do: {:noreply, trunc(to), :stream}
+
+@impl true
+def handle_stream(to, stream) do
+  for current <- 1..to do
+    Process.sleep(100)
+    Portico.Stream.send(stream, {:progress, current, total: to, message: "Counted #{current}"})
+  end
+
+  {:ok, Portico.Result.text(Integer.to_string(to))}
+end
+```
+
+The original request and its assigns are available in `stream.request`.
+`Portico.Stream.send/2` returns `:ok` or `{:error, reason}`. It validates numeric, increasing progress
+and sends updates only if the client supplied a progress token. `total:` and
+`message:` are optional. Invalid updates are rejected without being sent or
+ending the stream. For example, repeating a progress value returns
+`{:error, :non_increasing_progress}`. Handle a rejection explicitly when needed:
+
+```elixir
+case Portico.Stream.send(stream, {:progress, current, total: to}) do
+  :ok -> {:ok, Portico.Result.text("Finished")}
+  {:error, _reason} -> {:ok, Portico.Result.error("Could not report progress")}
+end
+```
+
+The callback always finishes with `{:ok, result}`;
+`Portico.Result.error/1` works here too.
+
+After restarting the example, watch the SSE events with curl:
+
+```sh
+curl -N http://127.0.0.1:4000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Mcp-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/call' \
+  -H 'Mcp-Name: count' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+    "name":"count","arguments":{"to":5},"_meta":{
+      "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities":{},"progressToken":"count-1"
+    }}}'
+```
+
+Try `"to":1` for a JSON reply. Omit `progressToken` to get an SSE stream containing
+only comments and the final result. This streams progress, not partial result text.
+
+Portico stops the callback task on disconnect detection or timeout. It writes
+SSE heartbeat comments every second during silent work, allowing disconnects
+to be detected even when the callback never reports progress. Detection timing
+depends on the server and network. The Plug option `stream_timeout:` defaults to
+30,000 milliseconds; the host HTTP server controls network write timeouts.
+Exceptions after streaming starts produce a generic JSON-RPC error event; the
+already-sent HTTP status remains 200. Cancellation cannot roll back side effects
+or stop detached processes created by application code.
+
+In ExUnit, `call_tool` still returns the final Result. Collect progress with:
+
+```elixir
+result = call_tool mcp, "count", %{"to" => 3},
+  on_progress: fn update -> send(self(), {:progress, update}) end,
+  timeout: 5_000
+
+assert_text result, "3"
+assert_received {:progress, %{progress: 1, total: 3}}
+```
+
+The helper's streaming timeout defaults to 5,000 milliseconds and stops unfinished
+work before raising. Tool exceptions propagate in tests. `handle_stream/2` is
+optional for tools that always return normal replies.

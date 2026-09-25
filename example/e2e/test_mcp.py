@@ -83,10 +83,12 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "count"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)
+                for listed_tool in listing.tools:
+                    Draft202012Validator.check_schema(listed_tool.input_schema)
                 tool = listing.tools[0]
                 Draft202012Validator.check_schema(tool.input_schema)
                 self.assertEqual(tool.description, "Add two integers.")
@@ -129,6 +131,38 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual([item.text for item in result.content], [
                             "Tool arguments do not match the input schema. " + detail,
                         ])
+
+
+    async def test_count_reply_and_stream(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                for count in (1, 3):
+                    updates = []
+
+                    async def on_progress(progress, total, message):
+                        updates.append((progress, total, message))
+
+                    result = await client.call_tool(
+                        "count", {"to": count}, progress_callback=on_progress
+                    )
+                    self.assertFalse(result.is_error)
+                    self.assertEqual(result.content[0].text, str(count))
+                    expected = [] if count == 1 else [
+                        (n, count, f"Counted {n}") for n in range(1, count + 1)
+                    ]
+                    self.assertEqual(updates, expected)
+
+    async def test_count_without_progress_and_invalid_arguments(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                result = await client.call_tool("count", {"to": 2})
+                self.assertFalse(result.is_error)
+                self.assertEqual(result.content[0].text, "2")
+                for arguments in ({}, {"to": 0}, {"to": 21}, {"to": "3"}):
+                    with self.subTest(arguments=arguments):
+                        result = await client.call_tool("count", arguments)
+                        self.assertTrue(result.is_error)
+                        self.assertIn('"/to":', result.content[0].text)
 
 
 if __name__ == "__main__":

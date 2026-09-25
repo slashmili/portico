@@ -41,7 +41,8 @@ defmodule Portico.Protocol.Validation do
 
   Requires a string protocol version and a client-capabilities object. Client
   information is optional; when supplied, it must contain string name and
-  version fields. Returns the metadata unchanged, including extension fields.
+  version fields. An optional `progressToken` must be a string or integer;
+  explicit null is invalid. Returns metadata unchanged, including extension fields.
 
   This is structural validation only. Supported-version checks, capability
   payloads, optional metadata fields, and metadata key naming rules are separate
@@ -53,7 +54,8 @@ defmodule Portico.Protocol.Validation do
   def request_metadata(%{"_meta" => meta} = params) do
     if object?(params) and object?(meta) and
          string?(meta["io.modelcontextprotocol/protocolVersion"]) and
-         object?(meta["io.modelcontextprotocol/clientCapabilities"]) and client_info_valid?(meta) do
+         object?(meta["io.modelcontextprotocol/clientCapabilities"]) and client_info_valid?(meta) and
+         progress_token_valid?(meta) do
       {:ok, meta}
     else
       {:error, :invalid_params}
@@ -72,6 +74,13 @@ defmodule Portico.Protocol.Validation do
       {:ok, name, arguments}
     else
       {:error, :invalid_params}
+    end
+  end
+
+  defp progress_token_valid?(meta) do
+    case Map.fetch(meta, "progressToken") do
+      :error -> true
+      {:ok, token} -> is_integer(token) or string?(token)
     end
   end
 
