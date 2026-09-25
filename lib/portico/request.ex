@@ -34,11 +34,18 @@ defmodule Portico.Request do
           assigns: %{optional(atom()) => term()}
         }
 
+  @type assign_error :: :invalid_request | :invalid_assigns | :invalid_assign_key
+
   @doc """
   Adds or replaces an application assign, returning the updated request.
 
   Keys must be atoms supplied by application code. Incoming strings are never
-  converted to atoms.
+  converted to atoms. Existing assigns must be a plain map with atom keys.
+
+  Invalid input returns `{:error, reason}` without raising. Validation checks
+  the request first (`:invalid_request`), then its assigns (`:invalid_assigns`),
+  then the new key (`:invalid_assign_key`). Successful calls return the updated
+  request directly. Handle an error before continuing a request pipeline.
 
   ## Examples
 
@@ -46,8 +53,22 @@ defmodule Portico.Request do
       iex> request.assigns
       %{locale: "en"}
   """
-  @spec assign(t(), atom(), term()) :: t()
-  def assign(%__MODULE__{} = request, key, value) when is_atom(key) do
-    %{request | assigns: Map.put(request.assigns, key, value)}
+  @spec assign(t(), atom(), term()) :: t() | {:error, assign_error()}
+  def assign(%__MODULE__{assigns: assigns} = request, key, value) do
+    cond do
+      not is_map(assigns) or is_struct(assigns) ->
+        {:error, :invalid_assigns}
+
+      not Enum.all?(Map.keys(assigns), &is_atom/1) ->
+        {:error, :invalid_assigns}
+
+      not is_atom(key) ->
+        {:error, :invalid_assign_key}
+
+      true ->
+        %{request | assigns: Map.put(assigns, key, value)}
+    end
   end
+
+  def assign(_request, _key, _value), do: {:error, :invalid_request}
 end

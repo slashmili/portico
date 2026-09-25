@@ -25,10 +25,32 @@ defmodule Portico.RequestTest do
     assert Request.assign(request, :locale, "de").assigns == %{locale: "de"}
   end
 
-  test "assign requires an atom key" do
-    assert_raise FunctionClauseError, fn ->
-      # Exercise runtime rejection without a static type warning on Elixir 1.20.
-      apply(Request, :assign, [%Request{}, "current_user", %{id: 42}])
+  test "assign rejects non-atom keys without raising" do
+    for key <- ["current_user", 42, [], %{}] do
+      assert Request.assign(%Request{}, key, :value) == {:error, :invalid_assign_key}
     end
+  end
+
+  test "assign rejects invalid requests before inspecting the key" do
+    for request <- [nil, :request, [], %{}, %{assigns: %{}}] do
+      assert Request.assign(request, "bad key", :value) == {:error, :invalid_request}
+    end
+  end
+
+  test "assign rejects malformed existing assigns before inspecting the key" do
+    for assigns <- [nil, [], :invalid, %Request{}, %{"locale" => "en"}, %{"bad" => 2, ok: 1}] do
+      request = %Request{assigns: assigns}
+      assert Request.assign(request, :locale, "de") == {:error, :invalid_assigns}
+      assert Request.assign(request, "locale", "de") == {:error, :invalid_assigns}
+    end
+  end
+
+  test "successful pipelines preserve metadata and allow arbitrary assign values" do
+    request = %Request{id: 7, method: "tools/call", progress_token: "progress"}
+    value = {self(), fn -> :ok end}
+    updated = request |> Request.assign(:context, value) |> Request.assign(:locale, "en")
+
+    assert updated == %{request | assigns: %{context: value, locale: "en"}}
+    assert request.assigns == %{}
   end
 end
