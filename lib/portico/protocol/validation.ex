@@ -44,17 +44,21 @@ defmodule Portico.Protocol.Validation do
   version fields. An optional `progressToken` must be a string or integer;
   explicit null is invalid. Returns metadata unchanged, including extension fields.
 
-  This is structural validation only. Supported-version checks, capability
+  Elicitation and its optional `form`/`url` fields must be string-keyed objects.
+  Empty declarations and unknown extension fields are preserved unchanged.
+
+  This is structural validation only. Supported-version checks, other capability
   payloads, optional metadata fields, and metadata key naming rules are separate
   checks. Client information is self-reported and does not establish identity.
-  This function applies to requests, not notifications. Errors will map to
-  JSON-RPC Invalid params (-32602) when error encoding is implemented.
+  This function applies to requests, not notifications. Errors map to
+  JSON-RPC Invalid params (-32602).
   """
   @spec request_metadata(term()) :: {:ok, map()} | {:error, :invalid_params}
   def request_metadata(%{"_meta" => meta} = params) do
     if object?(params) and object?(meta) and
          string?(meta["io.modelcontextprotocol/protocolVersion"]) and
-         object?(meta["io.modelcontextprotocol/clientCapabilities"]) and client_info_valid?(meta) and
+         capabilities_valid?(meta["io.modelcontextprotocol/clientCapabilities"]) and
+         client_info_valid?(meta) and
          progress_token_valid?(meta) do
       {:ok, meta}
     else
@@ -75,6 +79,23 @@ defmodule Portico.Protocol.Validation do
     else
       {:error, :invalid_params}
     end
+  end
+
+  defp capabilities_valid?(capabilities) do
+    object?(capabilities) and
+      case Map.fetch(capabilities, "elicitation") do
+        :error ->
+          true
+
+        {:ok, elicitation} ->
+          object?(elicitation) and
+            Enum.all?(["form", "url"], fn mode ->
+              case Map.fetch(elicitation, mode) do
+                :error -> true
+                {:ok, options} -> object?(options)
+              end
+            end)
+      end
   end
 
   defp progress_token_valid?(meta) do

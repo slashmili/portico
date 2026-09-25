@@ -76,6 +76,22 @@ defmodule Portico.Protocol.DispatcherTest do
              Dispatcher.dispatch(Server, Map.delete(@request, "params"))
   end
 
+  test "malformed elicitation capabilities are rejected before a tool callback" do
+    message =
+      put_in(@request, ["params", "_meta", "io.modelcontextprotocol/clientCapabilities"], %{
+        "elicitation" => %{"form" => true}
+      })
+
+    assert {:reply, %{"error" => %{"code" => -32602}}} = Dispatcher.dispatch(Server, message)
+
+    context = %Portico.Test.Context{
+      server: Server,
+      client_capabilities: %{"elicitation" => %{"url" => nil}}
+    }
+
+    assert Portico.Test.call_tool(context, "guarded", %{}) == {:error, :invalid_params}
+  end
+
   test "unimplemented protocol methods return method not found" do
     for method <- ["unknown/method", "guarded"] do
       assert Dispatcher.dispatch(Server, %{@request | "method" => method}) ==

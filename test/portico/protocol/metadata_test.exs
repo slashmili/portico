@@ -64,6 +64,44 @@ defmodule Portico.Protocol.MetadataTest do
     end
   end
 
+  test "preserves valid elicitation modes and unknown capability fields" do
+    for elicitation <- [
+          %{},
+          %{"form" => %{}},
+          %{"url" => %{}},
+          %{"form" => %{}, "url" => %{}},
+          %{"form" => %{"com.example/options" => [1, true, nil]}, "com.example/future" => true},
+          %{"com.example/future" => %{}}
+        ] do
+      capabilities = %{"elicitation" => elicitation, "com.example/custom" => ["opaque"]}
+      meta = Map.put(@meta, @capabilities, capabilities)
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:ok, meta}
+    end
+  end
+
+  test "rejects malformed elicitation objects and either malformed mode" do
+    for invalid <- [
+          nil,
+          false,
+          true,
+          [],
+          "form",
+          42,
+          %Portico.Request{},
+          %{atom: true},
+          %{<<255>> => true}
+        ],
+        elicitation <- [
+          invalid,
+          %{"form" => invalid},
+          %{"url" => invalid},
+          %{"form" => %{}, "url" => invalid}
+        ] do
+      meta = Map.put(@meta, @capabilities, %{"elicitation" => elicitation})
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+  end
+
   test "optional client information requires string name and version when supplied" do
     for client <- [
           nil,
