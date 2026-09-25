@@ -13,7 +13,8 @@ defmodule Portico.Tool do
 
         @impl true
         def call(%{"a" => a, "b" => b}, _request) do
-          {:ok, Portico.Result.text("#{a + b}")}
+          {:ok, result} = Portico.Result.text("#{a + b}")
+          {:ok, result}
         end
       end
 
@@ -51,7 +52,8 @@ defmodule Portico.Tool do
 
   Expected tool failures use the same callback shape:
 
-      {:ok, Portico.Result.error("Provide a valid date.")}
+      {:ok, result} = Portico.Result.error("Provide a valid date.")
+      {:ok, result}
 
   This returns a completed result with `isError: true`. Unexpected callback
   exceptions remain generic protocol errors over HTTP and propagate in tests.
@@ -63,7 +65,9 @@ defmodule Portico.Tool do
 
       def handle_stream(to, stream) do
         for n <- 1..to, do: Portico.Stream.send(stream, {:progress, n, total: to})
-        {:ok, Portico.Result.text("Finished")}
+        {:ok, result} = Portico.Result.text("Finished")
+        {:ok, result}
+      end
 
   Each invocation chooses its response type. `call/2` runs in the request
   process; keep it short and put long-running work in `handle_stream/2`.

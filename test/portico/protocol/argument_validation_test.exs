@@ -24,7 +24,7 @@ defmodule Portico.Protocol.ArgumentValidationTest do
     @impl true
     def call(arguments, request) do
       send(request.assigns.observer, {:invoked, arguments})
-      {:ok, Result.text("called")}
+      Result.text("called")
     end
   end
 
@@ -91,7 +91,7 @@ defmodule Portico.Protocol.ArgumentValidationTest do
   test "valid input reaches callbacks unchanged without defaults or integer coercion" do
     for arguments <- [%{"count" => 2}, %{"count" => 2.0, "tags" => ["ok"]}] do
       {:ok, result} = call_tool Server, "checked", arguments, assigns: %{observer: self()}
-      assert result == Result.text("called")
+      assert {:ok, result} == Result.text("called")
       assert_received {:invoked, received}
       assert received === arguments
       refute Map.has_key?(received, "label")

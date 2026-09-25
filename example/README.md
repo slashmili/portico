@@ -130,7 +130,8 @@ context but is not returned. `:ok` means the callback produced a result;
 `result.is_error` says whether the tool succeeded. For an expected failure:
 
 ```elixir
-{:ok, Portico.Result.error("Provide exactly two integers, a and b.")}
+{:ok, result} = Portico.Result.error("Provide exactly two integers, a and b.")
+{:ok, result}
 ```
 
 After restarting the example, call `add` with `{"a": "2", "b": 3}` to see a
@@ -156,7 +157,7 @@ sanitized internal errors. Local tests can use `assert result.is_error` alongsid
 `text/2` appends content in order and `put_error/2` sets or clears the error flag:
 
 ```elixir
-result =
+{:ok, result} =
   %Portico.Result{}
   |> Portico.Result.text("Provide exactly two integers, a and b.")
   |> Portico.Result.text("Example: a=2, b=3.")
@@ -168,7 +169,11 @@ result =
 This pipeline is useful for application failures that need several messages.
 Schema failures are handled automatically before the callback. `Result.text/1`
 and `Result.error/1` remain shortcuts for a single text item. All helpers return a
-new result without modifying the original.
+new result in `{:ok, result}` without modifying the original. Invalid input returns
+`{:error, reason}` and pipelines preserve that error. Match `{:ok, result}`
+explicitly before returning `{:ok, result}` from the callback. The match asserts
+successful construction and raises `MatchError` if the helper returns an error;
+use `case` when you need to recover from a construction failure.
 
 
 ## Schema declarations
@@ -198,8 +203,10 @@ The `count` tool returns a normal reply for `to: 1`. Larger counts return
 
 ```elixir
 @impl true
-def call(%{"to" => to}, _request) when to == 1,
-  do: {:ok, Portico.Result.text("1")}
+def call(%{"to" => to}, _request) when to == 1 do
+  {:ok, result} = Portico.Result.text("1")
+  {:ok, result}
+end
 
 def call(%{"to" => to}, _request), do: {:noreply, trunc(to), :stream}
 
@@ -210,7 +217,8 @@ def handle_stream(to, stream) do
     Portico.Stream.send(stream, {:progress, current, total: to, message: "Counted #{current}"})
   end
 
-  {:ok, Portico.Result.text(Integer.to_string(to))}
+  {:ok, result} = Portico.Result.text(Integer.to_string(to))
+  {:ok, result}
 end
 ```
 
@@ -223,8 +231,13 @@ ending the stream. For example, repeating a progress value returns
 
 ```elixir
 case Portico.Stream.send(stream, {:progress, current, total: to}) do
-  :ok -> {:ok, Portico.Result.text("Finished")}
-  {:error, _reason} -> {:ok, Portico.Result.error("Could not report progress")}
+  :ok ->
+    {:ok, result} = Portico.Result.text("Finished")
+    {:ok, result}
+
+  {:error, _reason} ->
+    {:ok, result} = Portico.Result.error("Could not report progress")
+    {:ok, result}
 end
 ```
 

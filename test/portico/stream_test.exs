@@ -10,7 +10,7 @@ defmodule Portico.StreamTest do
   defmodule Tool do
     use Portico.Tool, input_schema: %{type: "object"}
     @impl true
-    def call(%{"mode" => "reply"}, _request), do: {:ok, Result.text("immediate")}
+    def call(%{"mode" => "reply"}, _request), do: Result.text("immediate")
     def call(arguments, _request), do: {:noreply, arguments, :stream}
 
     @impl true
@@ -33,7 +33,7 @@ defmodule Portico.StreamTest do
 
         "pause" ->
           receive do
-            :finish -> {:ok, Result.text("finished")}
+            :finish -> Result.text("finished")
           end
 
         "raise" ->
@@ -46,7 +46,7 @@ defmodule Portico.StreamTest do
           {:ok, %Result{content: [%{type: "text", text: 1}]}}
 
         "error" ->
-          {:ok, Result.error("expected failure")}
+          Result.error("expected failure")
 
         "wait" ->
           Process.sleep(:infinity)
@@ -60,13 +60,13 @@ defmodule Portico.StreamTest do
         _ ->
           Stream.send(stream, {:progress, 0.5, total: 2.0, message: "first\nline"})
           Stream.send(stream, {:progress, 2})
-          {:ok, Result.text("finished")}
+          Result.text("finished")
       end
     end
 
     defp observe_send(stream, result) do
       if observer = stream.request.assigns[:observer], do: send(observer, {:send_result, result})
-      {:ok, Result.text("handled")}
+      Result.text("handled")
     end
   end
 
@@ -120,7 +120,7 @@ defmodule Portico.StreamTest do
   end
 
   test "one tool chooses either reply or streaming per invocation" do
-    assert call_tool(Server, "work", %{"mode" => "reply"}) == {:ok, Result.text("immediate")}
+    assert call_tool(Server, "work", %{"mode" => "reply"}) == Result.text("immediate")
     owner = self()
 
     {:ok, result} =
@@ -128,7 +128,7 @@ defmodule Portico.StreamTest do
         assigns: %{observer: owner},
         on_progress: fn progress -> send(owner, {:progress, progress}) end
 
-    assert result == Result.text("finished")
+    assert {:ok, result} == Result.text("finished")
     assert_received {:worker, worker}
     assert worker != owner
     refute Process.alive?(worker)
@@ -192,7 +192,7 @@ defmodule Portico.StreamTest do
 
   test "expected stream errors remain completed tool results" do
     assert call_tool(Server, "work", %{"mode" => "error"}) ==
-             {:ok, Result.error("expected failure")}
+             Result.error("expected failure")
 
     assert [final] = events(http(message(%{"mode" => "error"})))
     assert final["result"]["isError"]
@@ -230,7 +230,7 @@ defmodule Portico.StreamTest do
                "work",
                %{"mode" => "bad_progress", "value" => value, "options" => options},
                assigns: %{observer: self()}
-             ) == {:ok, Result.text("handled")}
+             ) == Result.text("handled")
 
       assert_received {:send_result, {:error, ^reason}}
     end
@@ -340,7 +340,7 @@ defmodule Portico.StreamTest do
         ] do
       assert call_tool(Server, "work", %{"mode" => "bad_message", "message" => message},
                assigns: %{observer: self()}
-             ) == {:ok, Result.text("handled")}
+             ) == Result.text("handled")
 
       assert_received {:send_result, {:error, :unsupported_message}}
     end

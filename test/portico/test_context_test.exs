@@ -5,7 +5,7 @@ defmodule Portico.TestContextTest do
     @impl true
     def call(%{"text" => text}, request) do
       send(request.assigns.observer, {:context, request.assigns})
-      {:ok, Portico.Result.text(text)}
+      Portico.Result.text(text)
     end
   end
 
@@ -74,7 +74,8 @@ defmodule Portico.TestContextTest do
   test "assert_text evaluates its arguments once" do
     result = fn ->
       send(self(), :evaluated_result)
-      Portico.Result.text("hello")
+      {:ok, result} = Portico.Result.text("hello")
+      result
     end
 
     expected = fn ->
@@ -96,7 +97,7 @@ defmodule Portico.TestDefaultsTest do
 
     @impl true
     def call(%{"a" => a, "b" => b}, _request) do
-      {:ok, Portico.Result.text("#{a + b}")}
+      Portico.Result.text("#{a + b}")
     end
   end
 

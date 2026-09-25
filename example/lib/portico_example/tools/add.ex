@@ -12,10 +12,7 @@ defmodule PorticoExample.Tools.Add do
   def call(%{"a" => a, "b" => b}, _request) do
     # JSON Schema integers include values such as 2.0. Portico validates but
     # does not coerce arguments, so normalize them here for integer output.
-    result =
-      %Portico.Result{}
-      |> Portico.Result.text(Integer.to_string(trunc(a) + trunc(b)))
-
+    {:ok, result} = Portico.Result.text(Integer.to_string(trunc(a) + trunc(b)))
     {:ok, result}
   end
 end

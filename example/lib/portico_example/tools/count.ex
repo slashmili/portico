@@ -9,7 +9,11 @@ defmodule PorticoExample.Tools.Count do
     }
 
   @impl true
-  def call(%{"to" => to}, _request) when to == 1, do: {:ok, Portico.Result.text("1")}
+  def call(%{"to" => to}, _request) when to == 1 do
+    {:ok, result} = Portico.Result.text("1")
+    {:ok, result}
+  end
+
   def call(%{"to" => to}, _request), do: {:noreply, trunc(to), :stream}
 
   @impl true
@@ -20,6 +24,7 @@ defmodule PorticoExample.Tools.Count do
       Portico.Stream.send(stream, {:progress, current, total: to, message: "Counted #{current}"})
     end
 
-    {:ok, Portico.Result.text(Integer.to_string(to))}
+    {:ok, result} = Portico.Result.text(Integer.to_string(to))
+    {:ok, result}
   end
 end

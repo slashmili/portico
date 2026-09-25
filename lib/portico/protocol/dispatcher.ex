@@ -220,7 +220,7 @@ defmodule Portico.Protocol.Dispatcher do
             end
 
           {:error, message} ->
-            {:ok, Result.error(message)}
+            Result.error(message)
         end
     end
   end

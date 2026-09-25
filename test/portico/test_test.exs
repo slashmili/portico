@@ -15,7 +15,7 @@ defmodule Portico.TestTest do
     @impl true
     def call(%{"a" => a, "b" => b}, %Request{assigns: assigns})
         when map_size(assigns) == 0 do
-      {:ok, Result.text("#{a + b}")}
+      Result.text("#{a + b}")
     end
   end
 
@@ -25,7 +25,7 @@ defmodule Portico.TestTest do
     @impl true
     def call(arguments, request) do
       send(request.assigns.observer, {:called, arguments, request})
-      {:ok, Result.text("ok")}
+      Result.text("ok")
     end
   end
 
@@ -45,13 +45,13 @@ defmodule Portico.TestTest do
   end
 
   test "calls the declared tool and returns its result" do
-    assert call_tool(Server, "add", %{"a" => 2, "b" => 3}) == {:ok, Result.text("5")}
+    assert call_tool(Server, "add", %{"a" => 2, "b" => 3}) == Result.text("5")
   end
 
   test "each call receives fresh context with the supplied assigns" do
     for _ <- 1..2 do
       assert call_tool(Server, "observe", %{}, assigns: %{observer: self(), user_id: 42}) ==
-               {:ok, Result.text("ok")}
+               Result.text("ok")
 
       assert_received {:called, %{}, %Request{assigns: assigns}}
       assert assigns == %{observer: self(), user_id: 42}
@@ -117,7 +117,7 @@ defmodule Portico.TestTest do
     assert {:ok, result} =
              Portico.Protocol.Dispatcher.call_tool(Server, "observe", %{}, request)
 
-    assert result == Result.text("ok")
+    assert {:ok, result} == Result.text("ok")
     assert_received {:called, %{}, ^request}
   end
 

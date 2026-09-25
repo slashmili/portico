@@ -6,7 +6,7 @@ defmodule Portico.Protocol.ToolCallTest do
     use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(%{"a" => a, "b" => b}, _request) do
-      {:ok, Portico.Result.text("#{a + b}")}
+      Portico.Result.text("#{a + b}")
     end
   end
 
@@ -25,7 +25,7 @@ defmodule Portico.Protocol.ToolCallTest do
           "arguments" => arguments
         })
 
-      {:ok, Portico.Result.text(text)}
+      Portico.Result.text(text)
     end
   end
 
@@ -36,7 +36,8 @@ defmodule Portico.Protocol.ToolCallTest do
     def call(%{"shape" => true}, _), do: {:reply, "secret", %{}}
 
     def call(%{"flag" => flag}, _request) do
-      {:ok, Map.put(Portico.Result.text("private"), :is_error, flag)}
+      {:ok, result} = Portico.Result.text("private")
+      {:ok, Map.put(result, :is_error, flag)}
     end
 
     def call(%{"content" => content}, _request) do

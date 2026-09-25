@@ -1,55 +1,31 @@
 defmodule Portico.ResultTest do
   use ExUnit.Case, async: true
-
   alias Portico.Result
-
   doctest Result
 
-  test "text returns one content item and preserves Unicode and line breaks" do
-    text = "Grüße 👋\nSecond line\n"
-
-    assert Result.text(text) == %Result{content: [%{type: "text", text: text}]}
-  end
-
-  test "text accepts an empty string" do
-    assert Result.text("") == %Result{content: [%{type: "text", text: ""}]}
-  end
-
-  test "text rejects values that are not binaries" do
-    for value <- [nil, 42, :ok, ~c"hello", %{text: "hello"}] do
-      assert_raise FunctionClauseError, fn ->
-        apply(Result, :text, [value])
-      end
+  test "text returns a tuple and preserves empty text, Unicode and line breaks" do
+    for text <- ["", "Grüße 👋\nSecond line\n"] do
+      assert Result.text(text) == {:ok, %Result{content: [%{type: "text", text: text}]}}
     end
   end
 
-  test "text rejects invalid UTF-8" do
-    assert_raise ArgumentError, "expected text to be a valid UTF-8 string", fn ->
-      Result.text(<<255>>)
+  test "text and error reject invalid text without exceptions" do
+    for value <- [nil, 42, :ok, ~c"hello", %{text: "hello"}, <<255>>] do
+      assert Result.text(value) == {:error, :invalid_text}
+      assert Result.error(value) == {:error, :invalid_text}
+      assert Result.text(%Result{}, value) == {:error, :invalid_text}
     end
   end
 
-  test "error builds an explicit tool failure with text content" do
-    for text <- ["", "Unable to complete: Grüße\nTry again"] do
-      result = Result.error(text)
-      assert result.is_error == true
-      assert result.content == [%{type: "text", text: text}]
-    end
-
-    assert Result.text("ok").is_error == false
+  test "error constructs a completed tool failure rather than a constructor failure" do
+    assert {:ok, result} = Result.error("Try again")
+    assert result.is_error
+    assert result.content == [%{type: "text", text: "Try again"}]
   end
 
-  test "error rejects non-text values and invalid UTF-8" do
-    for value <- [nil, 42, :error, %{}] do
-      assert_raise FunctionClauseError, fn -> Result.error(value) end
-    end
-
-    assert_raise ArgumentError, fn -> Result.error(<<255>>) end
-  end
-
-  test "text appends in order while preserving the original result and error flag" do
-    original = Result.error("first")
-    result = original |> Result.text("Grüße\n") |> Result.text("")
+  test "text appends to structs and success tuples without changing originals" do
+    {:ok, original} = Result.error("first")
+    assert {:ok, result} = original |> Result.text("Grüße\n") |> Result.text("")
 
     assert result.content == [
              %{type: "text", text: "first"},
@@ -58,33 +34,37 @@ defmodule Portico.ResultTest do
            ]
 
     assert result.is_error
-    assert original == Result.error("first")
+    assert {:ok, original} == Result.error("first")
     assert Result.text(%Result{}, "first") == Result.text("first")
   end
 
-  test "put_error sets and clears the flag without changing content" do
-    original = Result.text("message")
+  test "put_error sets and clears the flag on structs and success tuples" do
+    {:ok, original} = Result.text("message")
     failure = Result.put_error(original, true)
     assert failure == Result.error("message")
-    assert Result.put_error(failure, false) == original
+    assert Result.put_error(failure, false) == {:ok, original}
     assert Result.put_error(failure, true) == failure
     refute original.is_error
   end
 
-  test "text append validates the new text and requires a result" do
-    for value <- [nil, 42, :ok, %{}] do
-      assert_raise FunctionClauseError, fn -> Result.text(%Result{}, value) end
+  test "invalid result containers and error flags return reasons" do
+    for value <- [nil, %{}, %Result{content: nil}, {:ok, "wrong"}] do
+      assert Result.text(value, "hello") == {:error, :invalid_result}
+      assert Result.put_error(value, true) == {:error, :invalid_result}
     end
 
-    assert_raise ArgumentError, fn -> Result.text(%Result{}, <<255>>) end
-    assert_raise FunctionClauseError, fn -> apply(Result, :text, [%{}, "hello"]) end
+    for value <- [nil, 1, "true", :error] do
+      assert Result.put_error(%Result{}, value) == {:error, :invalid_error_flag}
+    end
   end
 
-  test "put_error requires a result and a boolean" do
-    for value <- [nil, 1, "true", :error] do
-      assert_raise FunctionClauseError, fn -> Result.put_error(%Result{}, value) end
-    end
+  test "pipelines preserve the first error without raising or overwriting it" do
+    assert Result.text(42) |> Result.text("next") |> Result.put_error(true) ==
+             {:error, :invalid_text}
 
-    assert_raise FunctionClauseError, fn -> apply(Result, :put_error, [%{}, true]) end
+    assert Result.text("ok") |> Result.put_error(nil) |> Result.text("next") ==
+             {:error, :invalid_error_flag}
+
+    assert Result.text(%{}, "text") |> Result.put_error(true) == {:error, :invalid_result}
   end
 end

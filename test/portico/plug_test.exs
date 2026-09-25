@@ -20,13 +20,13 @@ defmodule Portico.PlugTest do
     use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(%{"fail" => true}, _request) do
-      {:ok, Portico.Result.error("Try another value")}
+      Portico.Result.error("Try another value")
     end
 
     def call(arguments, request) do
       if pid = request.assigns[:observer], do: send(pid, {:called, request})
       if arguments["raise"], do: raise("private detail")
-      {:ok, Portico.Result.text(arguments["text"] || "hello")}
+      Portico.Result.text(arguments["text"] || "hello")
     end
   end
 

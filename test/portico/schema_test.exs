@@ -9,7 +9,7 @@ defmodule Portico.SchemaTest do
         defmodule unquote(module) do
           use Portico.Tool, input_schema: unquote(Macro.escape(schema))
           @impl true
-          def call(_, _), do: {:ok, Portico.Result.text("ok")}
+          def call(_, _), do: Portico.Result.text("ok")
         end
       end,
       "schema_declaration.ex"
