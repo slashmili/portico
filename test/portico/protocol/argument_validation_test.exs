@@ -64,7 +64,7 @@ defmodule Portico.Protocol.ArgumentValidationTest do
 
   test "test helpers return a tool error and never invoke callbacks for invalid inputs" do
     for arguments <- @invalid do
-      result = call_tool Server, "checked", arguments, assigns: %{observer: self()}
+      {:ok, result} = call_tool Server, "checked", arguments, assigns: %{observer: self()}
       assert result.is_error
       assert [%{type: "text", text: text}] = result.content
       assert String.starts_with?(text, @failure)
@@ -90,7 +90,7 @@ defmodule Portico.Protocol.ArgumentValidationTest do
 
   test "valid input reaches callbacks unchanged without defaults or integer coercion" do
     for arguments <- [%{"count" => 2}, %{"count" => 2.0, "tags" => ["ok"]}] do
-      result = call_tool Server, "checked", arguments, assigns: %{observer: self()}
+      {:ok, result} = call_tool Server, "checked", arguments, assigns: %{observer: self()}
       assert result == Result.text("called")
       assert_received {:invoked, received}
       assert received === arguments

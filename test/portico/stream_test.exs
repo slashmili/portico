@@ -120,10 +120,10 @@ defmodule Portico.StreamTest do
   end
 
   test "one tool chooses either reply or streaming per invocation" do
-    assert call_tool(Server, "work", %{"mode" => "reply"}) == Result.text("immediate")
+    assert call_tool(Server, "work", %{"mode" => "reply"}) == {:ok, Result.text("immediate")}
     owner = self()
 
-    result =
+    {:ok, result} =
       call_tool Server, "work", %{},
         assigns: %{observer: owner},
         on_progress: fn progress -> send(owner, {:progress, progress}) end
@@ -177,8 +177,11 @@ defmodule Portico.StreamTest do
 
   test "stream failures stay visible in helpers and sanitized over HTTP" do
     for mode <- ["raise", "invalid", "invalid_content"] do
-      assert_raise if(mode == "raise", do: RuntimeError, else: ArgumentError), fn ->
-        call_tool Server, "work", %{"mode" => mode}
+      if mode == "raise" do
+        assert_raise RuntimeError, fn -> call_tool Server, "work", %{"mode" => mode} end
+      else
+        reason = if mode == "invalid", do: :invalid_callback_return, else: :invalid_result
+        assert call_tool(Server, "work", %{"mode" => mode}) == {:error, reason}
       end
 
       conn = http(message(%{"mode" => mode}, %{"progressToken" => "p"}))
@@ -188,22 +191,26 @@ defmodule Portico.StreamTest do
   end
 
   test "expected stream errors remain completed tool results" do
-    assert call_tool(Server, "work", %{"mode" => "error"}) == Result.error("expected failure")
+    assert call_tool(Server, "work", %{"mode" => "error"}) ==
+             {:ok, Result.error("expected failure")}
+
     assert [final] = events(http(message(%{"mode" => "error"})))
     assert final["result"]["isError"]
   end
 
   test "test helper timeout stops silent workers" do
-    assert_raise RuntimeError, ~r/stream timed out/, fn ->
-      call_tool Server, "work", %{"mode" => "wait"}, assigns: %{observer: self()}, timeout: 50
-    end
+    assert call_tool(Server, "work", %{"mode" => "wait"},
+             assigns: %{observer: self()},
+             timeout: 50
+           ) ==
+             {:error, :timeout}
 
     assert_received {:worker, worker}
     refute Process.alive?(worker)
   end
 
   test "stream return requires the optional callback" do
-    assert_raise ArgumentError, ~r/handle_stream\/2/, fn -> call_tool Server, "missing", %{} end
+    assert call_tool(Server, "missing", %{}) == {:error, :missing_stream_callback}
   end
 
   test "invalid progress values and options return error tuples" do
@@ -223,7 +230,7 @@ defmodule Portico.StreamTest do
                "work",
                %{"mode" => "bad_progress", "value" => value, "options" => options},
                assigns: %{observer: self()}
-             ) == Result.text("handled")
+             ) == {:ok, Result.text("handled")}
 
       assert_received {:send_result, {:error, ^reason}}
     end
@@ -246,7 +253,7 @@ defmodule Portico.StreamTest do
 
   test "helper checks stream options before starting work" do
     for options <- [[timeout: 0], [timeout: :infinity], [on_progress: true]] do
-      assert_raise ArgumentError, fn -> call_tool Server, "work", %{}, options end
+      assert {:error, _reason} = call_tool(Server, "work", %{}, options)
     end
 
     assert_raise ArgumentError, fn -> Portico.Plug.init(server: Server, stream_timeout: 0) end
@@ -333,7 +340,7 @@ defmodule Portico.StreamTest do
         ] do
       assert call_tool(Server, "work", %{"mode" => "bad_message", "message" => message},
                assigns: %{observer: self()}
-             ) == Result.text("handled")
+             ) == {:ok, Result.text("handled")}
 
       assert_received {:send_result, {:error, :unsupported_message}}
     end

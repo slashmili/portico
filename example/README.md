@@ -259,10 +259,10 @@ Exceptions after streaming starts produce a generic JSON-RPC error event; the
 already-sent HTTP status remains 200. Cancellation cannot roll back side effects
 or stop detached processes created by application code.
 
-In ExUnit, `call_tool` still returns the final Result. Collect progress with:
+In ExUnit, `call_tool` returns `{:ok, result}` or `{:error, reason}`. Collect progress with:
 
 ```elixir
-result = call_tool mcp, "count", %{"to" => 3},
+{:ok, result} = call_tool mcp, "count", %{"to" => 3},
   on_progress: fn update -> send(self(), {:progress, update}) end,
   timeout: 5_000
 
@@ -271,5 +271,5 @@ assert_received {:progress, %{progress: 1, total: 3}}
 ```
 
 The helper's streaming timeout defaults to 5,000 milliseconds and stops unfinished
-work before raising. Tool exceptions propagate in tests. `handle_stream/2` is
+work before returning `{:error, :timeout}`. Application exceptions propagate in tests. `handle_stream/2` is
 optional for tools that always return normal replies.

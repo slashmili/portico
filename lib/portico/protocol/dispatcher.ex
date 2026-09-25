@@ -124,6 +124,9 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
+      {:error, _reason} ->
+        {:reply, Error.response(:internal_error, request.id)}
+
       {:ok, _result, fields} ->
         complete(server, request.id, fields)
 
@@ -139,7 +142,7 @@ defmodule Portico.Protocol.Dispatcher do
          {:ok, result} <- call_tool(server, name, arguments, request) do
       case Encoder.tool_result(result) do
         {:ok, fields} -> {:ok, result, fields}
-        {:error, :invalid_result} -> raise ArgumentError, "invalid tool result content"
+        {:error, _reason} = error -> error
       end
     end
   end
@@ -183,12 +186,17 @@ defmodule Portico.Protocol.Dispatcher do
   defp readable_id(_message), do: nil
 
   @spec call_tool(module(), String.t(), map(), Request.t()) ::
-          {:ok, Result.t()} | {:stream, map()} | {:error, :unknown_tool}
-  def call_tool(server, name, arguments, %Request{} = request) when is_binary(name) do
-    unless is_map(arguments) and not is_struct(arguments) do
-      raise ArgumentError, "expected tool arguments to be a plain map"
+          {:ok, Result.t()} | {:stream, map()} | {:error, atom()}
+  def call_tool(server, name, arguments, %Request{} = request) do
+    with {:ok, name, arguments} <-
+           Validation.tool_call(%{"name" => name, "arguments" => arguments}) do
+      invoke_tool(server, name, arguments, request)
     end
+  end
 
+  def call_tool(_server, _name, _arguments, _request), do: {:error, :invalid_params}
+
+  defp invoke_tool(server, name, arguments, request) do
     case Enum.find(Server.tools(server), &(&1.name == name)) do
       nil ->
         {:error, :unknown_tool}
@@ -201,15 +209,14 @@ defmodule Portico.Protocol.Dispatcher do
                 reply
 
               {:noreply, data, :stream} ->
-                unless function_exported?(module, :handle_stream, 2),
-                  do: raise(ArgumentError, "streaming tool must implement handle_stream/2")
-
-                {:stream, %{module: module, data: data, request: request, server: server}}
+                if function_exported?(module, :handle_stream, 2) do
+                  {:stream, %{module: module, data: data, request: request, server: server}}
+                else
+                  {:error, :missing_stream_callback}
+                end
 
               _other ->
-                raise ArgumentError,
-                      "invalid return from #{inspect(module)}.call/2; " <>
-                        "expected {:ok, %Portico.Result{}} or {:noreply, data, :stream}"
+                {:error, :invalid_callback_return}
             end
 
           {:error, message} ->

@@ -11,7 +11,7 @@ defmodule Portico.Protocol.Encoder do
     end
   end
 
-  def tool_result(%Result{}), do: {:error, :invalid_result}
+  def tool_result(_result), do: {:error, :invalid_result}
 
   defp text_content([]), do: {:ok, []}
 

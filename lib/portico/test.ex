@@ -6,7 +6,7 @@ defmodule Portico.Test do
         use Portico.Test, server: MyApp.MCP, async: true
 
         test "adds numbers", %{mcp: mcp} do
-          result = call_tool mcp, "add", %{"a" => 2, "b" => 3}
+          {:ok, result} = call_tool mcp, "add", %{"a" => 2, "b" => 3}
           assert_text result, "5"
         end
       end
@@ -25,13 +25,13 @@ defmodule Portico.Test do
 
   Override assigns for a single invocation:
 
-      result = call_tool mcp, "add", %{"a" => 2, "b" => 3},
+      {:ok, result} = call_tool mcp, "add", %{"a" => 2, "b" => 3},
         assigns: %{current_user: user}
 
   Alternatively, use `ExUnit.Case` and `import Portico.Test` to call a server
   module directly:
 
-      result = call_tool MyApp.MCP, "add", %{"a" => 2, "b" => 3}
+      {:ok, result} = call_tool MyApp.MCP, "add", %{"a" => 2, "b" => 3}
 
   Add `import_deps: [:portico]` to your application's `.formatter.exs` to keep
   these calls without parentheses when running `mix format`.
@@ -92,7 +92,7 @@ defmodule Portico.Test do
   end
 
   @doc """
-  Invokes a named tool and returns its completed result.
+  Invokes a named tool and returns `{:ok, result}` or `{:error, reason}`.
 
   Accepts a `Portico.Test.Context` or a server module. Each invocation creates a
   fresh `Portico.Request`. Supply application context
@@ -103,47 +103,54 @@ defmodule Portico.Test do
   modifying the context or affecting subsequent calls. Direct module calls
   start with empty assigns.
 
-  Tool names must be strings and arguments must be string-keyed plain maps. Raises
-  `ArgumentError` for an unknown tool, invalid options, or an invalid callback
-  return shape or content. Metadata and version failures also raise
-  `ArgumentError`. Exceptions raised by the tool propagate to the test, while
-  the protocol entry point converts them to a generic internal error.
+  Tool names must be strings and arguments must be string-keyed plain maps.
+  Portico validation failures return `{:error, reason}`: for example
+  `:unknown_tool`, `:invalid_params`, `:invalid_callback_return`, `:invalid_result`,
+  or `:missing_stream_callback`. Invalid helper configuration also returns a
+  reason such as `:invalid_options`, `:invalid_assigns`, or `:invalid_server`.
+  Application callback exceptions still propagate to the test, while HTTP
+  converts them to a generic internal error. Failed assertions still raise.
 
-  Schema-invalid argument objects return `Portico.Result.error/1` without
-  running the callback. Malformed argument containers remain request errors.
+  Schema-invalid argument objects return `{:ok, %Portico.Result{is_error: true}}`
+  without running the callback. This is a completed tool result, distinct from
+  a library failure. Malformed argument containers return `{:error, :invalid_params}`.
 
-  Handles immediate results and `{:noreply, data, :stream}` outcomes, returning
-  the final result including its `is_error` flag. Streaming uses the same worker
-  and progress validation as HTTP. `timeout:` bounds streaming work (default
-  5,000 milliseconds); expiry stops the task and raises.
+  Handles immediate results and `{:noreply, data, :stream}` outcomes through the
+  same worker and progress validation as HTTP. Both return `{:ok, result}` on
+  completion. `timeout:` bounds streaming work (default 5,000 milliseconds);
+  expiry stops the task and returns `{:error, :timeout}`.
 
   Supply `on_progress: fn update -> ... end` to collect progress. The helper
   supplies a progress token and calls this function in the test process, with
   an atom-keyed map containing `:progress` and optional `:total`/`:message`.
   Exceptions in the callback stop the worker and propagate to the test.
 
-      result = call_tool mcp, "count", %{"to" => 3},
+      {:ok, result} = call_tool mcp, "count", %{"to" => 3},
         on_progress: fn update -> send(self(), {:progress, update}) end
       assert_text result, "3"
       assert_received {:progress, %{progress: 1, total: 3}}
 
   """
-  @spec call_tool(module() | Context.t(), String.t(), map(), keyword()) :: Result.t()
+  @spec call_tool(module() | Context.t(), String.t(), map(), keyword()) ::
+          {:ok, Result.t()} | {:error, term()}
   def call_tool(target, name, arguments, options \\ [])
 
   def call_tool(%Context{server: server, assigns: defaults} = context, name, arguments, options) do
-    options = Keyword.validate!(options, assigns: %{}, on_progress: nil, timeout: 5_000)
+    with {:ok, options} <- validate_options(options),
+         :ok <- validate_server(server),
+         :ok <- validate_assigns(defaults),
+         :ok <- validate_assigns(options[:assigns]) do
+      invoke(context, name, arguments, options)
+    end
+  end
 
-    unless is_integer(options[:timeout]) and options[:timeout] > 0,
-      do: raise(ArgumentError, "expected a positive :timeout in milliseconds")
+  def call_tool(server, name, arguments, options) when is_atom(server) do
+    call_tool(%Context{server: server}, name, arguments, options)
+  end
 
-    unless is_nil(options[:on_progress]) or is_function(options[:on_progress], 1),
-      do: raise(ArgumentError, "expected :on_progress to be a function of one argument")
+  def call_tool(_target, _name, _arguments, _options), do: {:error, :invalid_target}
 
-    assigns = Keyword.fetch!(options, :assigns)
-    validate_assigns!(defaults)
-    validate_assigns!(assigns)
-
+  defp invoke(context, name, arguments, options) do
     metadata = %{
       "io.modelcontextprotocol/protocolVersion" => context.protocol_version,
       "io.modelcontextprotocol/clientCapabilities" => context.client_capabilities
@@ -166,16 +173,15 @@ defmodule Portico.Test do
       "params" => %{"name" => name, "arguments" => arguments, "_meta" => metadata}
     }
 
-    case Dispatcher.call_tool_request(server, message, Map.merge(defaults, assigns)) do
-      {:ok, result} -> result
+    case Dispatcher.call_tool_request(
+           context.server,
+           message,
+           Map.merge(context.assigns, options[:assigns])
+         ) do
+      {:ok, _result} = reply -> reply
       {:stream, execution} -> collect_stream(execution, options)
-      {:error, :unknown_tool} -> raise ArgumentError, "unknown tool #{inspect(name)}"
-      {:error, reason} -> raise ArgumentError, "invalid tool request: #{inspect(reason)}"
+      {:error, _reason} = error -> error
     end
-  end
-
-  def call_tool(server, name, arguments, options) when is_atom(server) do
-    call_tool(%Context{server: server}, name, arguments, options)
   end
 
   defp collect_stream(execution, options) do
@@ -189,15 +195,42 @@ defmodule Portico.Test do
     end
 
     case Portico.Stream.Runner.run(execution, nil, emit, options[:timeout]) do
-      {:ok, result, _} -> result
+      {:ok, result, _} -> {:ok, result}
+      {:error, reason, _} -> {:error, reason}
       {:failed, kind, reason, stack, _} -> :erlang.raise(kind, reason, stack)
     end
   end
 
-  defp validate_assigns!(assigns) do
-    unless is_map(assigns) and not is_struct(assigns) and
-             Enum.all?(Map.keys(assigns), &is_atom/1) do
-      raise ArgumentError, "expected :assigns to be a plain map with atom keys"
+  defp validate_options(options) do
+    if Keyword.keyword?(options) and
+         Enum.all?(options, fn {key, _} -> key in [:assigns, :on_progress, :timeout] end) do
+      options = Keyword.merge([assigns: %{}, on_progress: nil, timeout: 5_000], options)
+
+      cond do
+        not (is_integer(options[:timeout]) and options[:timeout] > 0) ->
+          {:error, :invalid_timeout}
+
+        not (is_nil(options[:on_progress]) or is_function(options[:on_progress], 1)) ->
+          {:error, :invalid_on_progress}
+
+        true ->
+          {:ok, options}
+      end
+    else
+      {:error, :invalid_options}
     end
+  end
+
+  defp validate_server(server) do
+    if is_atom(server) and Code.ensure_loaded?(server) and
+         function_exported?(server, :__portico__, 1),
+       do: :ok,
+       else: {:error, :invalid_server}
+  end
+
+  defp validate_assigns(assigns) do
+    if is_map(assigns) and not is_struct(assigns) and Enum.all?(Map.keys(assigns), &is_atom/1),
+      do: :ok,
+      else: {:error, :invalid_assigns}
   end
 end

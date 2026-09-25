@@ -45,6 +45,9 @@ defmodule Portico.Transport.SSE do
 
             finish(conn, response)
 
+          {:error, _reason, conn} ->
+            finish(conn, Error.response(:internal_error, execution.request.id))
+
           {:failed, _kind, _reason, _stack, conn} ->
             finish(conn, Error.response(:internal_error, execution.request.id))
 

@@ -21,12 +21,11 @@ defmodule Portico.Stream.Runner do
             {:ok, %Result{} = result} ->
               case Encoder.tool_result(result) do
                 {:ok, _} -> {:ok, result}
-                _ -> raise ArgumentError, "invalid tool result content"
+                {:error, _reason} = error -> error
               end
 
             _ ->
-              raise ArgumentError,
-                    "invalid return from handle_stream/2; expected {:ok, %Portico.Result{}}"
+              {:error, :invalid_callback_return}
           end
         catch
           kind, reason -> {:failed, kind, reason, __STACKTRACE__}
@@ -57,7 +56,7 @@ defmodule Portico.Stream.Runner do
 
     cond do
       now >= state.deadline ->
-        {:failed, :error, RuntimeError.exception("stream timed out"), [], acc}
+        {:error, :timeout, acc}
 
       now >= state.tick ->
         case state.emit.(:heartbeat, acc) do
@@ -94,12 +93,16 @@ defmodule Portico.Stream.Runner do
         Process.demonitor(task_ref, [:flush])
         {:ok, result, acc}
 
+      {^task_ref, {:error, reason}} ->
+        Process.demonitor(task_ref, [:flush])
+        {:error, reason, acc}
+
       {^task_ref, {:failed, kind, reason, stack}} ->
         Process.demonitor(task_ref, [:flush])
         {:failed, kind, reason, stack, acc}
 
       {:DOWN, ^task_ref, :process, ^worker, _reason} ->
-        {:failed, :error, RuntimeError.exception("stream worker stopped"), [], acc}
+        {:error, :worker_stopped, acc}
     after
       wait -> loop(state, acc)
     end

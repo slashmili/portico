@@ -23,7 +23,7 @@ defmodule Portico.TestContextTest do
   end
 
   test "invokes the configured server with setup assigns", %{mcp: mcp} do
-    result = call_tool mcp, "echo", %{"text" => "hello"}
+    {:ok, result} = call_tool mcp, "echo", %{"text" => "hello"}
     assert_text result, "hello"
     assert_received {:context, %{observer: observer, locale: "en"}}
     assert observer == self()
@@ -41,15 +41,12 @@ defmodule Portico.TestContextTest do
   end
 
   test "context calls still check the configured server's routes", %{mcp: mcp} do
-    assert_raise ArgumentError, ~r/unknown tool "missing"/, fn ->
-      call_tool mcp, "missing", %{}
-    end
+    assert call_tool(mcp, "missing", %{}) == {:error, :unknown_tool}
   end
 
   test "invalid context assigns are rejected", %{mcp: mcp} do
-    assert_raise ArgumentError, ~r/plain map with atom keys/, fn ->
-      call_tool %{mcp | assigns: %{"locale" => "en"}}, "echo", %{"text" => "hello"}
-    end
+    assert call_tool(%{mcp | assigns: %{"locale" => "en"}}, "echo", %{"text" => "hello"}) ==
+             {:error, :invalid_assigns}
   end
 
   test "assert_text finds an exact text item and returns the result" do
@@ -111,7 +108,7 @@ defmodule Portico.TestDefaultsTest do
   use Portico.Test, server: Server, async: true
 
   test "provides a ready-to-use context without a setup block", %{mcp: mcp} do
-    result = call_tool mcp, "add", %{"a" => 2, "b" => 3}
+    {:ok, result} = call_tool mcp, "add", %{"a" => 2, "b" => 3}
     assert_text result, "5"
     assert mcp == %Portico.Test.Context{server: Server, assigns: %{}}
   end

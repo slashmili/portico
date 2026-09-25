@@ -45,13 +45,13 @@ defmodule Portico.TestTest do
   end
 
   test "calls the declared tool and returns its result" do
-    assert call_tool(Server, "add", %{"a" => 2, "b" => 3}) == Result.text("5")
+    assert call_tool(Server, "add", %{"a" => 2, "b" => 3}) == {:ok, Result.text("5")}
   end
 
   test "each call receives fresh context with the supplied assigns" do
     for _ <- 1..2 do
       assert call_tool(Server, "observe", %{}, assigns: %{observer: self(), user_id: 42}) ==
-               Result.text("ok")
+               {:ok, Result.text("ok")}
 
       assert_received {:called, %{}, %Request{assigns: assigns}}
       assert assigns == %{observer: self(), user_id: 42}
@@ -82,9 +82,7 @@ defmodule Portico.TestTest do
           %{context | client_capabilities: nil},
           %{context | client_info: %{}}
         ] do
-      assert_raise ArgumentError, fn ->
-        call_tool context, "observe", %{}
-      end
+      assert {:error, _reason} = call_tool(context, "observe", %{})
 
       refute_received {:called, _, _}
     end
@@ -110,9 +108,7 @@ defmodule Portico.TestTest do
   test "helper rejects result contents the protocol encoder cannot handle" do
     result = %Result{content: [%{type: "text", text: 42}]}
 
-    assert_raise ArgumentError, ~r/invalid tool result content/, fn ->
-      call_tool Server, "broken", %{"return" => {:ok, result}}
-    end
+    assert call_tool(Server, "broken", %{"return" => {:ok, result}}) == {:error, :invalid_result}
   end
 
   test "the shared dispatcher passes context in and returns only the result" do
@@ -126,9 +122,8 @@ defmodule Portico.TestTest do
   end
 
   test "unknown tool names do not invoke another tool" do
-    assert_raise ArgumentError, ~r/unknown tool "missing"/, fn ->
-      call_tool(Server, "missing", %{}, assigns: %{observer: self()})
-    end
+    assert call_tool(Server, "missing", %{}, assigns: %{observer: self()}) ==
+             {:error, :unknown_tool}
 
     refute_received {:called, _, _}
   end
@@ -143,13 +138,8 @@ defmodule Portico.TestTest do
           {:reply, Result.text("secret"), %{}},
           {:stream, "secret", %Request{}}
         ] do
-      error =
-        assert_raise ArgumentError, fn ->
-          call_tool(Server, "broken", %{"return" => reply})
-        end
-
-      assert error.message =~ "expected {:ok, %Portico.Result{}}"
-      refute error.message =~ "secret"
+      assert call_tool(Server, "broken", %{"return" => reply}) ==
+               {:error, :invalid_callback_return}
     end
   end
 
@@ -161,17 +151,21 @@ defmodule Portico.TestTest do
 
   test "helper rejects invalid assigns and unknown options before invoking a tool" do
     for options <- [[assigns: []], [assigns: %{"user_id" => 42}], [assings: %{}]] do
-      assert_raise ArgumentError, fn ->
-        call_tool(Server, "observe", %{}, options)
-      end
+      assert {:error, _reason} = call_tool(Server, "observe", %{}, options)
     end
   end
 
   test "arguments must be a plain map" do
     for arguments <- [nil, [], %Request{}, %{a: 2}] do
-      assert_raise ArgumentError, ~r/invalid_params/, fn ->
-        call_tool(Server, "add", arguments)
-      end
+      assert call_tool(Server, "add", arguments) == {:error, :invalid_params}
     end
+  end
+
+  test "invalid helper targets and options return reasons" do
+    assert call_tool(nil, "add", %{}) == {:error, :invalid_server}
+    assert call_tool(String, "add", %{}) == {:error, :invalid_server}
+    assert call_tool(%{server: Server}, "add", %{}) == {:error, :invalid_target}
+    assert call_tool(Server, "add", %{}, nil) == {:error, :invalid_options}
+    assert call_tool(Server, "add", %{}, assigns: nil) == {:error, :invalid_assigns}
   end
 end

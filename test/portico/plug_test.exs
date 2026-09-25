@@ -1,5 +1,5 @@
 defmodule Portico.PlugTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   @moduletag capture_log: true
   import Plug.Conn
   import Plug.Test
