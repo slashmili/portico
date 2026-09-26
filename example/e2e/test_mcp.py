@@ -306,6 +306,58 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(status, 200)
                     self.assertEqual(body["result"]["content"][0]["text"], "5")
 
+    async def test_known_client_capabilities(self):
+        async def invoke(capabilities):
+            payload = {
+                "jsonrpc": "2.0", "id": 28, "method": "tools/call",
+                "params": {
+                    "name": "add", "arguments": {"a": 2, "b": 3},
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                        "io.modelcontextprotocol/clientCapabilities": capabilities,
+                    },
+                },
+            }
+
+            def post():
+                request = urllib.request.Request(URL, data=json.dumps(payload).encode(), headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                    "Mcp-Method": "tools/call", "Mcp-Name": "add",
+                })
+                try:
+                    response = urllib.request.urlopen(request, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    return response.status, json.load(response)
+
+            return await asyncio.to_thread(post)
+
+        async with asyncio.timeout(15):
+            for capabilities in [{"roots": True}, {"sampling": None}, {"sampling": {"tools": []}},
+                                 {"sampling": {"context": False}}, {"experimental": []},
+                                 {"experimental": {"feature": True}}, {"extensions": None},
+                                 {"extensions": {"com.example/feature": False}},
+                                 {"extensions": {"unprefixed": {}}},
+                                 {"extensions": {"com..example/feature": {}}}]:
+                with self.subTest(invalid=capabilities):
+                    status, body = await invoke(capabilities)
+                    self.assertEqual(status, 400)
+                    self.assertEqual(body["error"]["code"], -32602)
+                    self.assertEqual(body["id"], 28)
+            for capabilities in [{}, {"roots": {}, "sampling": {}, "experimental": {}, "extensions": {}}, {
+                "roots": {"future": True}, "sampling": {"tools": {}, "context": {}, "future": True},
+                "experimental": {"opaque name/!": {"opaque key": True}},
+                "extensions": {"com.example/feature": {"opaque key/!": True}, "a/": {}},
+                "unknown capability": ["preserved"],
+            }]:
+                with self.subTest(valid=capabilities):
+                    status, body = await invoke(capabilities)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["result"]["content"][0]["text"], "5")
+
     async def test_add(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

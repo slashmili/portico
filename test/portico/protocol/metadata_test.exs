@@ -142,6 +142,63 @@ defmodule Portico.Protocol.MetadataTest do
     end
   end
 
+  test "preserves known capability declarations and opaque settings" do
+    for capabilities <- [
+          %{"roots" => %{}, "sampling" => %{}, "experimental" => %{}, "extensions" => %{}},
+          %{
+            "roots" => %{"future" => true},
+            "sampling" => %{
+              "tools" => %{},
+              "context" => %{"future" => [nil, true]},
+              "future" => 1
+            },
+            "experimental" => %{"not a metadata name/!" => %{"opaque key" => []}},
+            "extensions" => %{
+              "com.example/feature" => %{"opaque key/!" => true},
+              "io.modelcontextprotocol/future" => %{},
+              "a/" => %{}
+            },
+            "unknown capability" => ["preserved"]
+          }
+        ] do
+      meta = Map.put(@meta, @capabilities, capabilities)
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:ok, meta}
+    end
+  end
+
+  test "rejects malformed known capability containers and settings" do
+    for value <- [nil, true, [], 42, "yes", %Portico.Request{}, %{atom: true}],
+        capabilities <- [
+          %{"roots" => value},
+          %{"sampling" => value},
+          %{"sampling" => %{"tools" => value}},
+          %{"sampling" => %{"context" => value}},
+          %{"experimental" => value},
+          %{"experimental" => %{"test" => value}},
+          %{"extensions" => value},
+          %{"extensions" => %{"com.example/test" => value}}
+        ] do
+      meta = Map.put(@meta, @capabilities, capabilities)
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+  end
+
+  test "extension identifiers require a valid prefix but experimental names do not" do
+    for key <- [
+          "",
+          "feature",
+          "/feature",
+          "com..example/feature",
+          "1com/feature",
+          "com.example/a/b",
+          "com.example/bad key",
+          <<255>>
+        ] do
+      meta = Map.put(@meta, @capabilities, %{"extensions" => %{key => %{}}})
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+  end
+
   test "preserves valid elicitation modes and unknown capability fields" do
     for elicitation <- [
           %{},

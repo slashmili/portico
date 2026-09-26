@@ -117,6 +117,24 @@ defmodule Portico.Protocol.DispatcherTest do
     assert Dispatcher.call_tool_request(Server, message, %{}) == {:error, :invalid_params}
   end
 
+  test "malformed known capabilities fail before tool execution" do
+    for capabilities <- [
+          %{"sampling" => %{"tools" => true}},
+          %{"extensions" => %{"unprefixed" => %{}}}
+        ] do
+      message =
+        put_in(
+          @request,
+          ["params", "_meta", "io.modelcontextprotocol/clientCapabilities"],
+          capabilities
+        )
+
+      assert {:reply, %{"error" => %{"code" => -32602}}} = Dispatcher.dispatch(Server, message)
+      context = %Portico.Test.Context{server: Server, client_capabilities: capabilities}
+      assert Portico.Test.call_tool(context, "guarded", %{}) == {:error, :invalid_params}
+    end
+  end
+
   test "unimplemented protocol methods return method not found" do
     for method <- ["unknown/method", "guarded"] do
       assert Dispatcher.dispatch(Server, %{@request | "method" => method}) ==

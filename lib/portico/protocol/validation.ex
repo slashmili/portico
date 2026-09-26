@@ -58,14 +58,19 @@ defmodule Portico.Protocol.Validation do
   enable protocol log notifications.
 
   Elicitation and its optional `form`/`url` fields must be string-keyed objects.
-  Empty declarations and unknown extension fields are preserved unchanged.
+  Sampling and its optional `context`/`tools` fields, and roots, must also be
+  objects. Experimental and extension settings must be objects per entry;
+  extension identifiers require a valid metadata prefix. Experimental names
+  remain opaque. Empty declarations and unknown capability fields are preserved.
+  Accepting a declaration does not enable that feature in Portico.
 
   Request metadata keys follow MCP's optional prefix/name grammar, including
   empty names. Unknown well-formed keys are preserved, including reserved-prefix
   keys; nested extension data is not interpreted as metadata.
 
-  This is structural validation only. Supported-version checks, other capability
-  payloads and remaining optional metadata fields are separate checks. Client information is self-reported and does not establish identity.
+  This is structural validation of decoded JSON. Feature-specific extension
+  settings and trace-context formats are not checked here. Client information
+  is self-reported and does not establish identity.
   This function applies to requests, not notifications. Errors map to
   JSON-RPC Invalid params (-32602).
   """
@@ -110,19 +115,28 @@ defmodule Portico.Protocol.Validation do
 
   defp capabilities_valid?(capabilities) do
     object?(capabilities) and
-      case Map.fetch(capabilities, "elicitation") do
-        :error ->
-          true
+      optional?(capabilities, "elicitation", fn value ->
+        object_fields?(value, ["form", "url"])
+      end) and
+      optional?(capabilities, "sampling", fn value ->
+        object_fields?(value, ["context", "tools"])
+      end) and
+      optional?(capabilities, "roots", &object?/1) and
+      optional?(capabilities, "experimental", &settings_map?/1) and
+      optional?(capabilities, "extensions", &extensions?/1)
+  end
 
-        {:ok, elicitation} ->
-          object?(elicitation) and
-            Enum.all?(["form", "url"], fn mode ->
-              case Map.fetch(elicitation, mode) do
-                :error -> true
-                {:ok, options} -> object?(options)
-              end
-            end)
-      end
+  defp object_fields?(value, keys) do
+    object?(value) and Enum.all?(keys, fn key -> optional?(value, key, &object?/1) end)
+  end
+
+  defp settings_map?(value) do
+    object?(value) and Enum.all?(value, fn {_key, settings} -> object?(settings) end)
+  end
+
+  defp extensions?(value) do
+    settings_map?(value) and
+      Enum.all?(Map.keys(value), fn key -> String.contains?(key, "/") and meta_key?(key) end)
   end
 
   defp progress_token_valid?(meta) do

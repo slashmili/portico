@@ -528,3 +528,11 @@ Empty names are allowed by the protocol. Unknown well-formed keys and their
 values are preserved, including future reserved-prefix extension keys. Keys
 inside extension values are not interpreted as metadata. Invalid names return
 HTTP 400 / JSON-RPC -32602 before tool execution.
+
+
+Known client capabilities are also checked structurally. `roots` and `sampling`
+are objects; sampling's optional `context` and `tools` fields are objects too.
+`experimental` and `extensions` map names to settings objects. Extension names
+require a prefix, such as `com.example/feature`; experimental names are opaque.
+Unknown capabilities and settings are preserved. Valid declarations do not enable
+sampling, roots, or extensions in Portico; malformed shapes return HTTP 400 / -32602.
