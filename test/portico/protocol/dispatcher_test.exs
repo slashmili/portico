@@ -105,6 +105,12 @@ defmodule Portico.Protocol.DispatcherTest do
     assert Portico.Test.call_tool(context, "guarded", %{}) == {:error, :invalid_params}
   end
 
+  test "invalid request log level fails before tool execution" do
+    message = put_in(@request, ["params", "_meta", "io.modelcontextprotocol/logLevel"], "verbose")
+    assert {:reply, %{"error" => %{"code" => -32602}}} = Dispatcher.dispatch(Server, message)
+    assert Dispatcher.call_tool_request(Server, message, %{}) == {:error, :invalid_params}
+  end
+
   test "unimplemented protocol methods return method not found" do
     for method <- ["unknown/method", "guarded"] do
       assert Dispatcher.dispatch(Server, %{@request | "method" => method}) ==

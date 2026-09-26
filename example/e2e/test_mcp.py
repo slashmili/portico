@@ -216,6 +216,51 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(status, 200)
                     self.assertEqual(body["result"]["content"][0]["text"], "5")
 
+    async def test_request_log_levels(self):
+        async def invoke(extra):
+            payload = {
+                "jsonrpc": "2.0", "id": 26, "method": "tools/call",
+                "params": {
+                    "name": "add", "arguments": {"a": 2, "b": 3},
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                        "io.modelcontextprotocol/clientCapabilities": {}, **extra,
+                    },
+                },
+            }
+
+            def post():
+                request = urllib.request.Request(URL, data=json.dumps(payload).encode(), headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                    "Mcp-Method": "tools/call", "Mcp-Name": "add",
+                })
+                try:
+                    response = urllib.request.urlopen(request, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    self.assertEqual(response.headers.get_content_type(), "application/json")
+                    return response.status, json.load(response)
+
+            return await asyncio.to_thread(post)
+
+        key = "io.modelcontextprotocol/logLevel"
+        async with asyncio.timeout(15):
+            for level in [None, False, 42, [], {}, "", "verbose", "warn", "INFO", "info "]:
+                with self.subTest(invalid=level):
+                    status, body = await invoke({key: level})
+                    self.assertEqual(status, 400)
+                    self.assertEqual(body["error"]["code"], -32602)
+                    self.assertEqual(body["id"], 26)
+            for extra in [{}] + [{key: level} for level in
+                                ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]]:
+                with self.subTest(valid=extra):
+                    status, body = await invoke(extra)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["result"]["content"][0]["text"], "5")
+
     async def test_add(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

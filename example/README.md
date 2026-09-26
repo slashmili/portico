@@ -35,6 +35,10 @@ including tool arguments. Visibility follows the application's Logger level:
 Debug logging is explicitly enabled in development. Set the Logger level to
 `config :logger, level: :info` to keep only the HTTP summaries. There is no
 separate logging option on `Portico.Plug`.
+The optional request metadata field `io.modelcontextprotocol/logLevel` accepts
+`debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, or `emergency`.
+Invalid values return HTTP 400 / JSON-RPC -32602. This field does not change the
+application's Logger level or enable MCP log notifications in Portico.
 Portico logs both raw and already-parsed requests; no extra parser is needed.
 Results, headers, and assigns are not logged.
 

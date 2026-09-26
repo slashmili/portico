@@ -1,6 +1,8 @@
 defmodule Portico.Protocol.Validation do
   @moduledoc false
 
+  @log_levels ~w(debug info notice warning error critical alert emergency)
+
   @doc """
   Checks one decoded JSON-RPC request or notification envelope.
 
@@ -48,6 +50,10 @@ defmodule Portico.Protocol.Validation do
   An optional `progressToken` must be a string or integer;
   explicit null is invalid. Returns metadata unchanged, including extension fields.
 
+  Optional `io.modelcontextprotocol/logLevel` accepts debug, info, notice, warning,
+  error, critical, alert or emergency. Validation does not configure Logger or
+  enable protocol log notifications.
+
   Elicitation and its optional `form`/`url` fields must be string-keyed objects.
   Empty declarations and unknown extension fields are preserved unchanged.
 
@@ -63,7 +69,8 @@ defmodule Portico.Protocol.Validation do
          string?(meta["io.modelcontextprotocol/protocolVersion"]) and
          capabilities_valid?(meta["io.modelcontextprotocol/clientCapabilities"]) and
          client_info_valid?(meta) and
-         progress_token_valid?(meta) do
+         progress_token_valid?(meta) and
+         optional?(meta, "io.modelcontextprotocol/logLevel", &(&1 in @log_levels)) do
       {:ok, meta}
     else
       {:error, :invalid_params}

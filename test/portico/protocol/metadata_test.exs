@@ -23,6 +23,22 @@ defmodule Portico.Protocol.MetadataTest do
     assert Validation.request_metadata(%{"_meta" => meta, "name" => "add"}) == {:ok, meta}
   end
 
+  test "accepts all protocol log levels unchanged and permits omission" do
+    assert Validation.request_metadata(%{"_meta" => @meta}) == {:ok, @meta}
+
+    for level <- ~w(debug info notice warning error critical alert emergency) do
+      meta = Map.put(@meta, "io.modelcontextprotocol/logLevel", level)
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:ok, meta}
+    end
+  end
+
+  test "rejects invalid log levels without coercion" do
+    for level <- [nil, false, 42, [], %{}, :info, <<255>>, "", "verbose", "warn", "INFO", "info "] do
+      meta = Map.put(@meta, "io.modelcontextprotocol/logLevel", level)
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+  end
+
   test "requires metadata and both required fields on every request" do
     assert Validation.request_metadata(%{"_meta" => @meta}) == {:ok, @meta}
 
