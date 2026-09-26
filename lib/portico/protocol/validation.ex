@@ -41,7 +41,11 @@ defmodule Portico.Protocol.Validation do
 
   Requires a string protocol version and a client-capabilities object. Client
   information is optional; when supplied, it must contain string name and
-  version fields. An optional `progressToken` must be a string or integer;
+  version fields. Optional title, description and websiteUrl are UTF-8 strings;
+  icons are objects with string src, optional string mimeType, string-list sizes,
+  and light/dark theme. This checks shapes, not URI/MIME/size formats, and never
+  fetches icons. Unknown fields remain unchanged.
+  An optional `progressToken` must be a string or integer;
   explicit null is invalid. Returns metadata unchanged, including extension fields.
 
   Elicitation and its optional `form`/`url` fields must be string-keyed objects.
@@ -111,9 +115,31 @@ defmodule Portico.Protocol.Validation do
         true
 
       {:ok, info} ->
-        object?(info) and string?(info["name"]) and string?(info["version"])
+        object?(info) and string?(info["name"]) and string?(info["version"]) and
+          Enum.all?(["title", "description", "websiteUrl"], fn key ->
+            optional?(info, key, &string?/1)
+          end) and
+          optional?(info, "icons", fn icons -> list_of?(icons, &icon?/1) end)
     end
   end
+
+  defp icon?(icon) do
+    object?(icon) and string?(icon["src"]) and
+      optional?(icon, "mimeType", &string?/1) and
+      optional?(icon, "sizes", fn sizes -> list_of?(sizes, &string?/1) end) and
+      optional?(icon, "theme", &(&1 in ["light", "dark"]))
+  end
+
+  defp optional?(object, key, valid?) do
+    case Map.fetch(object, key) do
+      :error -> true
+      {:ok, value} -> valid?.(value)
+    end
+  end
+
+  defp list_of?([], _valid?), do: true
+  defp list_of?([head | tail], valid?), do: valid?.(head) and list_of?(tail, valid?)
+  defp list_of?(_value, _valid?), do: false
 
   defp params_valid?(message) do
     case Map.fetch(message, "params") do

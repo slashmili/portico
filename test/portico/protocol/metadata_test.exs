@@ -102,6 +102,71 @@ defmodule Portico.Protocol.MetadataTest do
     end
   end
 
+  test "preserves complete client information and icon extensions" do
+    for icons <- [
+          [],
+          [%{"src" => "https://example.invalid/icon.png"}],
+          [
+            %{
+              "src" => "data:image/png;base64,AAAA",
+              "mimeType" => "image/png",
+              "sizes" => ["48x48", "any"],
+              "theme" => "dark",
+              "com.example/icon" => true
+            },
+            %{"src" => "https://example.invalid/light.svg", "sizes" => [], "theme" => "light"}
+          ]
+        ] do
+      info = %{
+        "name" => "client",
+        "version" => "1",
+        "title" => "日本語",
+        "description" => "",
+        "websiteUrl" => "https://example.invalid",
+        "icons" => icons,
+        "com.example/custom" => [nil, true]
+      }
+
+      meta = Map.put(@meta, @client, info)
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:ok, meta}
+    end
+  end
+
+  test "rejects malformed optional client information without exceptions" do
+    info = %{"name" => "client", "version" => "1"}
+
+    for key <- ["title", "description", "websiteUrl"],
+        value <- [nil, false, 42, [], %{}, <<255>>] do
+      meta = Map.put(@meta, @client, Map.put(info, key, value))
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+
+    for icons <- [
+          nil,
+          false,
+          %{},
+          "icon",
+          [nil],
+          [%{}],
+          [%Portico.Request{}],
+          [%{"src" => 42}],
+          [%{"src" => <<255>>}],
+          [%{"src" => "x", :extra => true}],
+          [%{"src" => "x", "mimeType" => nil}],
+          [%{"src" => "x", "mimeType" => <<255>>}],
+          [%{"src" => "x", "sizes" => "any"}],
+          [%{"src" => "x", "sizes" => [42]}],
+          [%{"src" => "x", "sizes" => [<<255>>]}],
+          [%{"src" => "x", "sizes" => ["any" | 1]}],
+          [%{"src" => "x", "theme" => "auto"}],
+          [%{"src" => "x", "theme" => nil}],
+          [%{"src" => "x"} | 1]
+        ] do
+      meta = Map.put(@meta, @client, Map.put(info, "icons", icons))
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+  end
+
   test "optional client information requires string name and version when supplied" do
     for client <- [
           nil,

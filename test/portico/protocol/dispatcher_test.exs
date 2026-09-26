@@ -92,6 +92,19 @@ defmodule Portico.Protocol.DispatcherTest do
     assert Portico.Test.call_tool(context, "guarded", %{}) == {:error, :invalid_params}
   end
 
+  test "invalid optional client info fails before callbacks in protocol and test helpers" do
+    info = %{
+      "name" => "client",
+      "version" => "1",
+      "icons" => [%{"src" => "x", "theme" => "auto"}]
+    }
+
+    message = put_in(@request, ["params", "_meta", "io.modelcontextprotocol/clientInfo"], info)
+    assert {:reply, %{"error" => %{"code" => -32602}}} = Dispatcher.dispatch(Server, message)
+    context = %Portico.Test.Context{server: Server, client_info: info}
+    assert Portico.Test.call_tool(context, "guarded", %{}) == {:error, :invalid_params}
+  end
+
   test "unimplemented protocol methods return method not found" do
     for method <- ["unknown/method", "guarded"] do
       assert Dispatcher.dispatch(Server, %{@request | "method" => method}) ==

@@ -163,6 +163,59 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(status, 200)
                     self.assertEqual(body["result"]["content"][0]["text"], "5")
 
+    async def test_optional_client_info(self):
+        async def invoke(extra):
+            info = {"name": "test-client", "version": "1", **extra}
+            payload = {
+                "jsonrpc": "2.0", "id": 25, "method": "tools/call",
+                "params": {
+                    "name": "add", "arguments": {"a": 2, "b": 3},
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                        "io.modelcontextprotocol/clientInfo": info,
+                    },
+                },
+            }
+
+            def post():
+                request = urllib.request.Request(URL, data=json.dumps(payload).encode(), headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                    "Mcp-Method": "tools/call", "Mcp-Name": "add",
+                })
+                try:
+                    response = urllib.request.urlopen(request, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    return response.status, json.load(response)
+
+            return await asyncio.to_thread(post)
+
+        async with asyncio.timeout(15):
+            for extra in [{"title": 42}, {"description": None}, {"websiteUrl": []},
+                          {"icons": {}}, {"icons": [{}]}, {"icons": [{"src": False}]},
+                          {"icons": [{"src": "https://example.invalid/icon", "mimeType": 1}]},
+                          {"icons": [{"src": "https://example.invalid/icon", "sizes": [42]}]},
+                          {"icons": [{"src": "https://example.invalid/icon", "theme": "auto"}]}]:
+                with self.subTest(invalid=extra):
+                    status, body = await invoke(extra)
+                    self.assertEqual(status, 400)
+                    self.assertEqual(body["error"]["code"], -32602)
+                    self.assertEqual(body["id"], 25)
+            for extra in [{}, {"icons": []}, {
+                "title": "日本語", "description": "", "websiteUrl": "https://example.invalid",
+                "icons": [{"src": "https://example.invalid/icon.png", "mimeType": "image/png",
+                           "sizes": ["48x48", "any"], "theme": "dark", "com.example/icon": True}],
+                "com.example/custom": [None, True],
+            }]:
+                with self.subTest(valid=extra):
+                    status, body = await invoke(extra)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["result"]["content"][0]["text"], "5")
+
     async def test_add(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

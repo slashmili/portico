@@ -506,3 +506,13 @@ This completes the planned form scope for the first version: primitive fields,
 single and multiple selection with optional labels, and supported constraints.
 Further form extensions are deferred while we review first-version gaps and
 exercise real clients.
+
+
+## Client information metadata
+
+Optional `clientInfo` fields are validated before tools run. `title`, `description`
+and `websiteUrl` must be strings. Each `icons` entry needs a string `src`; optional
+`mimeType` is a string, `sizes` is a list of strings, and `theme` is `light` or `dark`.
+Unknown fields are preserved. Malformed values return HTTP 400 / JSON-RPC -32602.
+These are structural checks, not URI, MIME or size-format validation. Portico does
+not fetch icons; client information remains self-reported, not authenticated identity.
