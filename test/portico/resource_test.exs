@@ -14,6 +14,7 @@ defmodule Portico.ResourceTest do
       if pid = request.assigns[:observer], do: send(pid, request)
 
       case request.assigns[:mode] do
+        :missing -> {:error, :resource_not_found}
         :error -> {:error, :unavailable}
         :bad -> {:ok, "bad"}
         :forged -> {:ok, %Resource{text: self()}}
@@ -27,6 +28,7 @@ defmodule Portico.ResourceTest do
     use Portico.Server, name: "resources", version: "1"
     resource "company://z", Handbook
     resource "company://handbook", Handbook
+    resource_template "company://lookup/{name}", Handbook
   end
 
   test "declares resources in URI order and returns validated text with fresh context" do
@@ -72,6 +74,35 @@ defmodule Portico.ResourceTest do
     assert read["result"]["contents"] == [
              %{"uri" => "company://handbook", "mimeType" => "text/plain", "text" => "Welcome"}
            ]
+  end
+
+  test "callbacks can report missing static or template resources without masking other failures" do
+    for uri <- ["company://handbook", "company://lookup/missing"],
+        {mode, reason, code} <- [
+          {:missing, :resource_not_found, -32602},
+          {:error, :unavailable, -32603}
+        ] do
+      assert Test.read_resource(Catalog, uri, assigns: %{mode: mode}) == {:error, reason}
+
+      {:reply, reply} =
+        Dispatcher.dispatch(Catalog, message("resources/read", %{"uri" => uri}), %{mode: mode})
+
+      assert reply["error"]["code"] == code
+      refute Map.has_key?(reply, "result")
+    end
+  end
+
+  test "missing resources have a specific message while malformed reads remain invalid params" do
+    for {params, assigns, expected} <- [
+          {%{"uri" => "company://missing"}, %{}, "Resource not found"},
+          {%{"uri" => "company://handbook"}, %{mode: :missing}, "Resource not found"},
+          {%{"uri" => "company://lookup/missing"}, %{mode: :missing}, "Resource not found"},
+          {%{}, %{}, "Invalid params"},
+          {%{"uri" => "relative"}, %{}, "Invalid params"}
+        ] do
+      {:reply, reply} = Dispatcher.dispatch(Catalog, message("resources/read", params), assigns)
+      assert reply["error"] == %{"code" => -32602, "message" => expected}
+    end
   end
 
   test "runtime failures return tuples; application crashes surface in tests and are sanitized on the wire" do

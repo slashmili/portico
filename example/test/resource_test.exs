@@ -1,6 +1,12 @@
 defmodule PorticoExample.ResourceTest do
   use Portico.Test, server: PorticoExample.MCP, async: true
 
+  test "looks up policies and reports missing entries", %{mcp: mcp} do
+    {:ok, content} = read_resource mcp, "company://policies/leave"
+    assert content.text == "Request leave through your manager."
+    assert {:error, :resource_not_found} = read_resource(mcp, "company://policies/missing")
+  end
+
   test "reads multiple documents", %{mcp: mcp} do
     {:ok, [readme, guide]} = read_resource mcp, "company://docs"
 

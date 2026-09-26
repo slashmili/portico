@@ -19,7 +19,9 @@ defmodule Portico.Resource do
   `read/1` receives a fresh `Portico.Request` with `resource_uri` and application
   assigns. Return `{:ok, content}` or `{:error, reason}`. Helpers preserve failures
   as tuples and propagate application exceptions; HTTP sanitizes callback failures
-  as internal errors. Authorization belongs to the application.
+  as internal errors. The specific tuple `{:error, :resource_not_found}` reports
+  a missing resource and maps to MCP invalid params (`-32602`). Other callback
+  errors remain internal errors. Authorization belongs to the application.
 
   Templates use the same callback:
   `resource_template "company://handbook/{section}", MyApp.Resources.HandbookSection`.

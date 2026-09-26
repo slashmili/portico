@@ -5,6 +5,7 @@ defmodule Portico.Protocol.Error do
           :parse_error
           | :invalid_request
           | :invalid_params
+          | :resource_not_found
           | :method_not_found
           | :internal_error
           | :header_mismatch
@@ -46,6 +47,7 @@ defmodule Portico.Protocol.Error do
   defp details(:parse_error), do: %{"code" => -32700, "message" => "Parse error"}
   defp details(:invalid_request), do: %{"code" => -32600, "message" => "Invalid request"}
   defp details(:invalid_params), do: %{"code" => -32602, "message" => "Invalid params"}
+  defp details(:resource_not_found), do: %{"code" => -32602, "message" => "Resource not found"}
   defp details(:method_not_found), do: %{"code" => -32601, "message" => "Method not found"}
   defp details(:internal_error), do: %{"code" => -32603, "message" => "Internal error"}
   defp details(:header_mismatch), do: %{"code" => -32020, "message" => "Header mismatch"}

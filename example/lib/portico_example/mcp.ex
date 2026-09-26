@@ -12,4 +12,5 @@ defmodule PorticoExample.MCP do
   resource "company://handbook", PorticoExample.Resources.Handbook
   resource "company://sample", PorticoExample.Resources.Sample
   resource_template "company://handbook/{section}", PorticoExample.Resources.HandbookSection
+  resource_template "company://policies/{name}", PorticoExample.Resources.Policy
 end

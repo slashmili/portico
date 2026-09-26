@@ -69,6 +69,9 @@ defmodule Portico.Protocol.Resources do
       {:ok, values} when is_list(values) ->
         encode_contents(values)
 
+      {:error, :resource_not_found} ->
+        {:error, :resource_not_found}
+
       {:error, reason} ->
         {:callback_error, reason}
 

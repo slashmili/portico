@@ -840,3 +840,30 @@ A list callback yields a list in the helper, even with one item. Existing
 single-item callbacks still yield one struct with the route's URI and MIME type.
 An empty list means an existing resource has no contents; do not use it to
 represent a missing resource.
+
+
+## Resource lookups and missing entries
+
+The `company://policies/{name}` template looks up two fixed policies: `leave`
+and `expenses`. In Inspector, list resource templates and read
+`company://policies/leave`. Try `company://policies/missing` to see the missing
+resource error.
+
+A matching route does not guarantee the requested entry exists. In `read/1`,
+return `{:error, :resource_not_found}` when your lookup finds no entry:
+
+```elixir
+case Map.fetch(@policies, name) do
+  {:ok, text} ->
+    {:ok, content} = Portico.Resource.text(text)
+    {:ok, content}
+
+  :error ->
+    {:error, :resource_not_found}
+end
+```
+
+The helper preserves the error tuple; MCP receives `-32602` with the message
+“Resource not found”. Malformed requests retain “Invalid params”. Other callback
+errors remain sanitized internal errors (`-32603`). This applies to static and
+template resources. Do not return an empty contents list for a missing entry.

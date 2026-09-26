@@ -175,7 +175,7 @@ defmodule Portico.Protocol.Dispatcher do
         complete(server, context.id, fields)
 
       {:error, reason} when reason in [:invalid_params, :resource_not_found] ->
-        {:reply, Error.response(:invalid_params, context.id)}
+        {:reply, Error.response(reason, context.id)}
 
       _ ->
         {:reply, Error.response(:internal_error, context.id)}

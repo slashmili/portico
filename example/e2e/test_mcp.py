@@ -150,7 +150,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((listing.cache_scope, listing.ttl_ms), ("private", 0))
                 self.assertIsNone(listing.next_cursor)
                 templates = await client.list_resource_templates()
-                self.assertEqual(len(templates.resource_templates), 1)
+                self.assertEqual(len(templates.resource_templates), 2)
                 template = templates.resource_templates[0]
                 self.assertEqual(template.uri_template, "company://handbook/{section}")
                 self.assertEqual(template.name, "handbook-section")
@@ -165,6 +165,24 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(MCPError) as caught:
                     await client.read_resource("company://missing")
                 self.assertEqual(caught.exception.error.code, -32602)
+                self.assertEqual(caught.exception.error.message, "Resource not found")
+
+    async def test_policy_lookup(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                templates = await client.list_resource_templates()
+                policy = next(item for item in templates.resource_templates
+                              if item.uri_template == "company://policies/{name}")
+                self.assertEqual(policy.name, "policy")
+                for name, text in [("leave", "Request leave through your manager."),
+                                   ("expenses", "Keep receipts for business expenses.")]:
+                    result = await client.read_resource("company://policies/" + name)
+                    self.assertEqual(result.contents[0].text, text)
+                    self.assertEqual(str(result.contents[0].uri), "company://policies/" + name)
+                with self.assertRaises(MCPError) as caught:
+                    await client.read_resource("company://policies/missing")
+                self.assertEqual(caught.exception.error.code, -32602)
+                self.assertEqual(caught.exception.error.message, "Resource not found")
 
     async def test_multiple_resource_contents(self):
         async with asyncio.timeout(15):
@@ -207,6 +225,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(MCPError) as caught:
                     await client.read_resource("company://handbook/extra/path")
                 self.assertEqual(caught.exception.error.code, -32602)
+                self.assertEqual(caught.exception.error.message, "Resource not found")
 
     async def test_discovery(self):
         async with asyncio.timeout(15):
