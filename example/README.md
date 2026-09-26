@@ -42,8 +42,9 @@ application's Logger level or enable MCP log notifications in Portico.
 Portico logs both raw and already-parsed requests; no extra parser is needed.
 Results, headers, and assigns are not logged.
 
-Parameter keys containing `password`, `secret`, `token`, `authorization`, or
-`api_key` are redacted recursively, ignoring case. Extend these defaults with
+Parameter keys containing `password`, `secret`, `token`, `authorization`,
+`api_key`, or `requeststate` are redacted recursively, ignoring case. Extend these
+defaults with
 `filter_parameters: ["email", "credential"]` in the Plug options. Filtering only
 changes log output; tool callbacks receive the original arguments.
 Restart `mix run --no-halt` after code changes to load them.
@@ -129,18 +130,21 @@ mix format --check-formatted
 - `lib/portico_example/mcp.ex` — the route-like tool declarations.
 - `lib/portico_example/tools/add.ex` — raw JSON Schema and the tool callback.
 - `lib/portico_example/tools/count.ex` — immediate replies and streaming callbacks.
+- `lib/portico_example/tools/greet.ex` — form replies and custom verification.
+- `lib/portico_example/tools/choose_color.ex` — labeled single-choice forms.
+- `lib/portico_example/tools/choose_colors.ex` — multiple-choice forms.
+- `lib/portico_example/tools/summarize.ex` — structured JSON results.
 - `lib/portico_example/router.ex` — mounts Portico at `/mcp`.
 - `lib/portico_example/application.ex` — starts the listener under supervision.
 - `config/runtime.exs` — port, Origin allowlist, and no listener during unit tests.
 - `test/mcp_test.exs` — `call_tool` and `assert_text`, without parentheses.
 - `e2e/test_mcp.py` — real Python client interoperability tests.
 
-This is the first manual-testing checkpoint. Discovery, listing, and completed
-text tool calls and progress streams work; elicitation is still pending. Schemas are
-checked at compile time as Draft 2020-12, normalized, and advertised. Arguments
-are validated before callbacks run. The `add` callback only performs arithmetic;
+Discovery, listing, text and structured results, progress streams, and form
+elicitation are supported. Schemas are checked at compile time as Draft 2020-12,
+normalized, and advertised. Arguments are validated before callbacks run. The `add` callback only performs arithmetic;
 Portico handles missing fields, wrong types, and extra properties.
-Custom `Mcp-Param` annotations are also pending.
+Custom `x-mcp-header` annotations are rejected at compilation.
 
 
 ## Expected tool failures
@@ -378,10 +382,11 @@ Application-specific identity checks and one-time execution remain application
 responsibilities; the custom verifier can enforce identity using fresh assigns.
 `requestState` is redacted from Portico's parameter logs.
 
-This first slice supports one form at a time with flat string, number, integer,
+Form elicitation supports one form at a time with flat string, number, integer,
 and boolean fields. Single-choice string enums are also supported. Arrays of string enum choices support multiple selection, with optional labels.
 URL forms and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
-tool schemas. Clients without form capability receive a completed tool error.
+tool schemas. Clients without form capability receive JSON-RPC error `-32021`
+(`Missing required client capability`); see the HTTP and streaming behavior below.
 
 Direct tests can use the same retry flow:
 

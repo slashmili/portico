@@ -17,13 +17,13 @@ defmodule Portico.Protocol.Dispatcher do
   are ignored; no notification handlers are implemented yet.
 
   Checks the protocol version on every request before method lookup. Currently
-  `server/discover`, `tools/list`, and text `tools/call` are implemented, including
-  optional request-scoped streaming.
+  `server/discover`, `tools/list`, and `tools/call` are implemented, including
+  text and structured results, form elicitation, and request-scoped streaming.
   Discovery advertises basic tools support. Listing returns the whole
   static catalog in name order and issues no pagination cursors. Discovery and
-  listing use private cache scope with zero TTL (immediately stale). This is an incremental
-  dispatcher, not a complete MCP implementation; full metadata validation is
-  still pending. Arguments are validated before callback execution without
+  listing use private cache scope with zero TTL (immediately stale). Known client
+  metadata is validated; trace-context extraction and propagation are deferred.
+  Arguments are validated before callback execution without
   coercion; schema failures return a completed tool error. Test helpers use `call_tool_request/3`
   for the same validation and execution with exceptions left visible to tests.
   """
