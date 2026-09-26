@@ -101,6 +101,64 @@ defmodule Portico.Server.Compiler do
     |> Enum.sort_by(& &1.name)
   end
 
+  def prompt_metadata!(options, env) do
+    options!(options, [:description, :arguments], "prompt", env)
+    description!(options, env)
+    arguments = Keyword.get(options, :arguments, [])
+
+    unless Keyword.keyword?(arguments),
+      do: error!(env, "expected prompt arguments to be a keyword list")
+
+    options!(arguments, Keyword.keys(arguments), "prompt argument", env)
+
+    arguments =
+      Enum.map(arguments, fn {name, options} ->
+        name = Atom.to_string(name)
+        nonempty_string!(name, "prompt argument name", env)
+        options!(options, [:description, :required], "prompt argument", env)
+        description!(options, env)
+        required = Keyword.get(options, :required, false)
+
+        unless is_boolean(required),
+          do: error!(env, "expected prompt argument :required to be a boolean")
+
+        options |> Map.new() |> Map.merge(%{name: name, required: required})
+      end)
+
+    options |> Map.new() |> Map.put(:arguments, arguments)
+  end
+
+  def prompt!(name, module, env) do
+    nonempty_string!(name, "prompt name", env)
+
+    unless is_atom(module) and module not in [nil, true, false] and
+             Code.ensure_compiled(module) == {:module, module} and
+             function_exported?(module, :__portico_prompt__, 0) and
+             function_exported?(module, :get, 2),
+           do: error!(env, "expected a Portico.Prompt module")
+
+    module
+    |> Macro.compile_apply(:__portico_prompt__, [], env)
+    |> Map.merge(%{name: name, module: module})
+  end
+
+  def prompt_catalog!(declarations) do
+    Enum.reduce(declarations, MapSet.new(), fn {prompt, env}, names ->
+      if MapSet.member?(names, prompt.name),
+        do: error!(env, "duplicate prompt name #{inspect(prompt.name)}")
+
+      MapSet.put(names, prompt.name)
+    end)
+
+    declarations |> Enum.map(fn {prompt, _} -> prompt end) |> Enum.sort_by(& &1.name)
+  end
+
+  defp description!(options, env) do
+    if Keyword.has_key?(options, :description) and
+         not (is_binary(options[:description]) and String.valid?(options[:description])),
+       do: error!(env, "expected :description to be a UTF-8 string")
+  end
+
   def resource_metadata!(options, env) do
     options!(options, [:name, :description, :mime_type, :elicitation_verifier], "resource", env)
     nonempty_string!(options[:name], "resource name", env)

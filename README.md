@@ -77,7 +77,7 @@ end
 
 `Portico.Test` supplies a fresh context for each test. Add
 `import_deps: [:portico]` to your `.formatter.exs` options to keep `tool`,
-`call_tool`, `resource`, `resource_template`, `read_resource`, and `assert_text` calls without parentheses.
+`call_tool`, `resource`, `resource_template`, `read_resource`, `prompt`, `get_prompt`, and `assert_text` calls without parentheses.
 
 See the [runnable example](https://github.com/slashmili/portico/tree/HEAD/example)
 for a standalone Bandit server, forms, streaming, and real HTTP tests using the
@@ -131,7 +131,12 @@ Resource reads can return one item or a list with per-item URI and MIME metadata
 or request form/URL elicitation and resume through `handle_input/3`. See
 `company://welcome` and `company://reviewed-report` in the example.
 
-Only MCP **2026-07-28** is implemented. Prompts, subscriptions, stdio,
+Prompts support listing and retrieval with validated string arguments. Define a
+`Portico.Prompt` module, route it with `prompt "review_code", MyApp.Prompts.ReviewCode`,
+and test it with `get_prompt mcp, "review_code", %{"code" => "1 + 1"}`.
+The first slice returns one user-role text message; it does not call an LLM.
+
+Only MCP **2026-07-28** is implemented. Prompt completion, subscriptions, stdio,
 and legacy protocol versions are outside the current scope.
 Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.
 The host application owns authentication, authorization, and rate limiting.

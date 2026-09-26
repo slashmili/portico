@@ -10,6 +10,7 @@ defmodule Portico.Request do
   valid default metadata, configurable through `Portico.Test.Context`. Client information
   and capabilities describe the caller's claims, not authenticated identity.
 
+  Prompt execution fills `server`, `prompt_name`, and string-valued `arguments`.
   Tool execution also fills `server`, `tool_name`, and `arguments`. These identify
   the operation when checking elicitation continuations. Resource reads fill
   `server` and `resource_uri` instead; tool fields remain unset. Template variables
@@ -23,6 +24,7 @@ defmodule Portico.Request do
   defstruct [
     :server,
     :tool_name,
+    :prompt_name,
     :resource_uri,
     :resource_route,
     :arguments,
@@ -39,6 +41,7 @@ defmodule Portico.Request do
   @type t :: %__MODULE__{
           server: module() | nil,
           tool_name: String.t() | nil,
+          prompt_name: String.t() | nil,
           resource_uri: String.t() | nil,
           resource_route: {module(), String.t()} | nil,
           resource_params: %{optional(String.t()) => String.t()},

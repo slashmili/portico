@@ -179,6 +179,28 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.error.code, -32021)
                 self.assertEqual(caught.exception.error.data, {"requiredCapabilities": {"elicitation": {"url": {}}}})
 
+    async def test_prompts(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                self.assertIsNotNone(client.server_capabilities.prompts)
+                listing = await client.list_prompts()
+                self.assertEqual(len(listing.prompts), 1)
+                prompt = listing.prompts[0]
+                self.assertEqual(prompt.name, "review_code")
+                self.assertEqual(prompt.description, "Prepare a code review request.")
+                self.assertEqual(prompt.arguments[0].name, "code")
+                self.assertTrue(prompt.arguments[0].required)
+                self.assertEqual((listing.cache_scope, listing.ttl_ms), ("private", 0))
+                result = await client.get_prompt("review_code", {"code": "1 + 1"})
+                self.assertEqual(len(result.messages), 1)
+                self.assertEqual(result.messages[0].role, "user")
+                self.assertEqual(result.messages[0].content.text, "Review this code for bugs:\n\n1 + 1")
+                for name, arguments in [("review_code", {}), ("missing", {}),
+                                        ("review_code", {"code": "x", "extra": "y"})]:
+                    with self.assertRaises(MCPError) as caught:
+                        await client.get_prompt(name, arguments)
+                    self.assertEqual(caught.exception.error.code, -32602)
+
     async def test_resources(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

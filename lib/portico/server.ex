@@ -1,6 +1,6 @@
 defmodule Portico.Server do
   @moduledoc """
-  Declares a server's identity, tool routes, and resource routes.
+  Declares a server's identity and tool, resource, and prompt routes.
 
       defmodule MyApp.MCP do
         use Portico.Server, name: "my-app", version: "1.0.0"
@@ -8,7 +8,7 @@ defmodule Portico.Server do
         tool "add", MyApp.MCP.Tools.Add
       end
 
-  Inspect declarations with `info/1`, `tools/1`, `resources/1`, and `resource_templates/1`. Names are case-sensitive;
+  Inspect declarations with `info/1`, `tools/1`, `resources/1`, `resource_templates/1`, and `prompts/1`. Names are case-sensitive;
   duplicate tool names and malformed declarations raise compile-time errors.
   Server names and versions must be nonempty UTF-8 strings. Versions do not
   have to follow semantic versioning.
@@ -18,7 +18,8 @@ defmodule Portico.Server do
   discovery, listing, and completed tool calls through `Portico.Plug`. Schema
   declarations are checked at compilation and arguments before tool execution.
   Resource modules use `Portico.Resource`; declare them with `resource/2` or `resource_template/2` and
-  test reads with `Portico.Test.read_resource/3`.
+  test reads with `Portico.Test.read_resource/3`. Prompt modules use
+  `Portico.Prompt`; declare them with `prompt/2` and test with `Portico.Test.get_prompt/4`.
   """
 
   alias Portico.Server.Compiler
@@ -37,8 +38,9 @@ defmodule Portico.Server do
       Module.register_attribute(__MODULE__, :portico_tools, accumulate: true)
       Module.register_attribute(__MODULE__, :portico_resources, accumulate: true)
       Module.register_attribute(__MODULE__, :portico_resource_templates, accumulate: true)
+      Module.register_attribute(__MODULE__, :portico_prompts, accumulate: true)
       @portico_info Compiler.info!(unquote(options), __ENV__)
-      import Portico.Server, only: [tool: 2, resource: 2, resource_template: 2]
+      import Portico.Server, only: [tool: 2, resource: 2, resource_template: 2, prompt: 2]
       @before_compile Portico.Server
     end
   end
@@ -79,6 +81,13 @@ defmodule Portico.Server do
     end
   end
 
+  @doc "Routes a nonempty UTF-8 prompt name to a module using Portico.Prompt."
+  defmacro prompt(name, module) do
+    quote do
+      @portico_prompts {Compiler.prompt!(unquote(name), unquote(module), __ENV__), __ENV__}
+    end
+  end
+
   @doc false
   defmacro __before_compile__(env) do
     info = Module.get_attribute(env.module, :portico_info)
@@ -101,8 +110,15 @@ defmodule Portico.Server do
       |> Enum.reverse()
       |> Compiler.resource_template_catalog!()
 
+    prompts =
+      env.module
+      |> Module.get_attribute(:portico_prompts)
+      |> Enum.reverse()
+      |> Compiler.prompt_catalog!()
+
     quote do
       @doc false
+      def __portico__(:prompts), do: unquote(Macro.escape(prompts))
       def __portico__(:resource_templates), do: unquote(Macro.escape(templates))
       def __portico__(:info), do: unquote(Macro.escape(info))
       def __portico__(:tools), do: unquote(Macro.escape(tools))
@@ -130,4 +146,7 @@ defmodule Portico.Server do
   @doc "Returns resource templates sorted by URI template, including their modules."
   @spec resource_templates(module()) :: [map()]
   def resource_templates(server), do: server.__portico__(:resource_templates)
+  @doc "Returns prompt declarations sorted by name, including their modules."
+  @spec prompts(module()) :: [map()]
+  def prompts(server), do: server.__portico__(:prompts)
 end

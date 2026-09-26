@@ -1,6 +1,6 @@
 defmodule Portico.Test do
   @moduledoc """
-  Helpers for testing declared tools without opening an HTTP listener.
+  Helpers for testing declared tools, resources and prompts without an HTTP listener.
 
       defmodule MyApp.MCPTest do
         use Portico.Test, server: MyApp.MCP, async: true
@@ -166,6 +166,56 @@ defmodule Portico.Test do
   end
 
   def call_tool(_target, _name, _arguments, _options), do: {:error, :invalid_target}
+
+  @doc """
+  Gets a declared prompt through protocol validation without HTTP.
+
+      {:ok, prompt} = get_prompt mcp, "review_code", %{"code" => "1 + 1"}
+
+  Accepts a server module or context, string-keyed string arguments and optional
+  `assigns:` overrides. Returns `{:ok, %Portico.Prompt{}}` or `{:error, reason}`.
+  Missing required/unknown arguments return `:invalid_params`; unknown prompts
+  return `:unknown_prompt`. Application callback errors remain tuples and
+  callback exceptions surface in tests. HTTP sanitizes callback failures.
+  """
+  @spec get_prompt(module() | Context.t(), String.t(), map(), keyword()) ::
+          {:ok, Portico.Prompt.t()} | {:error, term()}
+  def get_prompt(target, name, arguments, options \\ [])
+
+  def get_prompt(%Context{} = context, name, arguments, options) do
+    with true <- Keyword.keyword?(options) and Enum.all?(Keyword.keys(options), &(&1 == :assigns)),
+         :ok <- validate_server(context.server),
+         :ok <- validate_assigns(context.assigns),
+         assigns = Keyword.get(options, :assigns, %{}),
+         :ok <- validate_assigns(assigns) do
+      metadata = %{
+        "io.modelcontextprotocol/protocolVersion" => context.protocol_version,
+        "io.modelcontextprotocol/clientCapabilities" => context.client_capabilities
+      }
+
+      metadata =
+        if is_nil(context.client_info),
+          do: metadata,
+          else: Map.put(metadata, "io.modelcontextprotocol/clientInfo", context.client_info)
+
+      message = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "prompts/get",
+        "params" => %{"name" => name, "arguments" => arguments, "_meta" => metadata}
+      }
+
+      Dispatcher.get_prompt_request(context.server, message, Map.merge(context.assigns, assigns))
+    else
+      false -> {:error, :invalid_options}
+      error -> error
+    end
+  end
+
+  def get_prompt(server, name, arguments, options) when is_atom(server),
+    do: get_prompt(%Context{server: server}, name, arguments, options)
+
+  def get_prompt(_, _, _, _), do: {:error, :invalid_target}
 
   @doc """
   Reads a static or template resource through protocol validation without HTTP.

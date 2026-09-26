@@ -3,6 +3,9 @@
   inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"],
   locals_without_parens: [
     tool: 2,
+    prompt: 2,
+    get_prompt: 3,
+    get_prompt: 4,
     resource: 2,
     resource_template: 2,
     read_resource: 2,
@@ -14,6 +17,9 @@
   export: [
     locals_without_parens: [
       tool: 2,
+      prompt: 2,
+      get_prompt: 3,
+      get_prompt: 4,
       resource: 2,
       resource_template: 2,
       read_resource: 2,

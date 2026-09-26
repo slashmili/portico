@@ -1006,3 +1006,61 @@ The first browser decision is final for that approval request. Revisiting the
 page shows the recorded decision; a stale form cannot change it. Start a new
 tool call or resource read to create a new approval request. Browser rejection
 is separate from declining or cancelling the URL prompt in the MCP client.
+
+
+## Prompts
+
+The `review_code` prompt prepares a user message for a code review. It does not
+execute the supplied code or call an LLM. In Inspector, open **Prompts**, list
+prompts, select **review_code**, enter `1 + 1` for **code**, and get the prompt.
+
+Declare it in the server:
+
+```elixir
+prompt "review_code", PorticoExample.Prompts.ReviewCode
+```
+
+Its module owns the argument metadata and callback:
+
+```elixir
+defmodule PorticoExample.Prompts.ReviewCode do
+  use Portico.Prompt,
+    description: "Prepare a code review request.",
+    arguments: [code: [description: "Code to review", required: true]]
+
+  def get(%{"code" => code}, _request) do
+    {:ok, prompt} = Portico.Prompt.text("Review this code for bugs:\n\n#{code}")
+    {:ok, prompt}
+  end
+end
+```
+
+Arguments are named strings, not JSON Schema objects. Declare them as a keyword
+list with optional `description:` and `required:` (default `false`). Portico
+rejects missing required arguments, undeclared names and non-string values before
+calling `get/2`. Empty strings are valid; optional absent values stay absent.
+Omitting `arguments` in a protocol request supplies an empty map.
+
+The fresh request exposes `server`, `prompt_name`, `arguments`, protocol metadata
+and application assigns. Authentication and authorization remain application-owned;
+the static catalog is not filtered by identity.
+
+```elixir
+{:ok, prompt} = get_prompt mcp, "review_code", %{"code" => "1 + 1"}
+assert prompt.messages == [
+  %{role: "user", content: %{type: "text", text: "Review this code for bugs:\n\n1 + 1"}}
+]
+```
+
+The helper accepts a server module or test context and optional `assigns:`.
+Unknown names return `{:error, :unknown_prompt}`; argument failures return
+`{:error, :invalid_params}`. Both map to MCP `-32602`. Callback errors stay
+visible as tuples in helpers, while HTTP sanitizes them as `-32603`. Invalid
+constructor text returns `{:error, :invalid_text}`; malformed prompt structs
+return `{:error, :invalid_prompt}`. Invalid declarations fail at compilation.
+
+`prompts/list` is sorted by name and uses private caching with zero TTL. Cursors
+are rejected in this slice. `Prompt.text/1` creates one user-role text message.
+Completion, multiple/rich messages, prompt elicitation and subscriptions remain
+follow-ups. Include `import_deps: [:portico]` in your formatter configuration to
+keep `prompt` and `get_prompt` calls without parentheses.
