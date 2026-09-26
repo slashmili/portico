@@ -67,6 +67,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, %{"method" => "resources/read", "params" => params}, context} ->
         case Resources.read(server, params, context) do
           {:ok, content, _fields} -> {:ok, content}
+          {:input, form, state, _fields} -> {:ok, form, state}
+          {:input_error, reason} -> {:error, reason}
           {:callback_error, reason} -> {:error, reason}
           error -> error
         end
@@ -173,6 +175,15 @@ defmodule Portico.Protocol.Dispatcher do
     case Resources.read(server, params, context) do
       {:ok, _content, fields} ->
         complete(server, context.id, fields)
+
+      {:input, _form, _state, fields} ->
+        input_required(server, context.id, fields)
+
+      {:input_error, :form_not_supported} ->
+        {:reply, Error.response(:form_not_supported, context.id)}
+
+      {:input_error, _reason} ->
+        {:reply, Error.response(:invalid_params, context.id)}
 
       {:error, reason} when reason in [:invalid_params, :resource_not_found] ->
         {:reply, Error.response(reason, context.id)}
@@ -360,43 +371,6 @@ defmodule Portico.Protocol.Dispatcher do
 
   defp run_callback(module, arguments, request, :initial), do: module.call(arguments, request)
 
-  defp run_callback(module, _arguments, request, {:resume, answer, state}) do
-    if not function_exported?(module, :handle_input, 3) do
-      {:error, :missing_input_callback}
-    else
-      with {:ok, envelope} <- open_input(state, request),
-           :ok <- Elicitation.require_support(request, envelope.form.mode),
-           {:ok, answer} <- Elicitation.match_answer(answer, envelope.form),
-           {:ok, verified_state} <- verify_input(module, state, request) do
-        case validate_answer(answer, envelope.form) do
-          :ok -> module.handle_input(answer, verified_state, request)
-          :retry -> {:ok, envelope.form, envelope.state}
-        end
-      end
-    end
-  end
-
-  defp open_input(state, request) do
-    case Portico.Elicitation.open(state, request) do
-      {:error, :invalid_request_state} -> {:input_error, :invalid_request_state}
-      other -> other
-    end
-  end
-
-  defp verify_input(module, state, request) do
-    case module.__portico_verify_input__(state, request) do
-      {:ok, _} = ok -> ok
-      {:error, _} = error -> error
-      _ -> {:error, :invalid_verifier_return}
-    end
-  end
-
-  defp validate_answer(:missing, _form), do: :retry
-
-  defp validate_answer({:accept, content}, form) do
-    {_schema, validator} = Schema.build!(form.schema, __ENV__)
-    if Schema.valid?(validator, content), do: :ok, else: :retry
-  end
-
-  defp validate_answer(_answer, _form), do: :ok
+  defp run_callback(module, _arguments, request, {:resume, answer, state}),
+    do: Elicitation.resume(module, answer, state, request)
 end

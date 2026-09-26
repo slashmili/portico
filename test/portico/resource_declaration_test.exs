@@ -43,6 +43,7 @@ defmodule Portico.ResourceDeclarationTest do
           [name: "a", name: "b"],
           [name: "x", title: "unsupported"],
           [name: "x", mime_type: 1],
+          [name: "x", elicitation_verifier: nil],
           [name: "x", description: <<255>>]
         ] do
       assert_raise CompileError, fn -> compile_resource(options) end

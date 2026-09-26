@@ -39,8 +39,23 @@ defmodule Portico.Resource do
   An empty list represents an existing resource with no contents, not a missing resource.
   Invalid items reject the entire read with `:invalid_resource` in test helpers.
   Use `blob/1` for raw bytes; the protocol encodes them as base64.
-  Elicitation during reads and
-  subscriptions are not implemented yet. Listings and reads use private caching
+  For form elicitation, return `{:ok, form, application_state}` and implement
+  `handle_input/3`. Application state is a UTF-8 string. The handler receives
+  `{:accept, content}`, `:decline`, or `:cancel`, the verified state and a fresh
+  request. It can return content, a list, another form or an error tuple.
+  Missing or schema-invalid answers reissue the form without invoking the handler.
+
+  Configure the per-server signing key described in `Portico.Elicitation`.
+  Tokens expire after five minutes and bind the server, resource module/route,
+  requested URI and form schema. They are signed, not encrypted or single-use.
+  The optional `elicitation_verifier: &MyApp.Elicitation.verify/2` uses the same
+  contract as tools; application identity checks remain the application's job.
+  The signed envelope is always checked before a custom verifier runs.
+
+  Clients need form elicitation support; otherwise reads return
+  `:form_not_supported` in helpers and MCP `-32021`. Tampered or mismatched tokens
+  return `:invalid_request_state` in helpers and MCP `-32602`.
+  Resource URL elicitation, streaming and subscriptions are not implemented yet. Listings and reads use private caching
   with zero TTL. Catalogs are static and are not filtered by caller identity.
   """
   defstruct [:text, :blob, :uri, :mime_type]
@@ -51,7 +66,10 @@ defmodule Portico.Resource do
           uri: String.t() | nil,
           mime_type: String.t() | nil
         }
-  @callback read(Portico.Request.t()) :: {:ok, t() | [t()]} | {:error, term()}
+  @type reply :: {:ok, t() | [t()]} | {:ok, Portico.Input.t(), String.t()} | {:error, term()}
+  @callback read(Portico.Request.t()) :: reply()
+  @callback handle_input(Portico.Input.answer(), term(), Portico.Request.t()) :: reply()
+  @optional_callbacks handle_input: 3
 
   @type content_error ::
           :invalid_text | :invalid_blob | :invalid_options | :invalid_uri | :invalid_mime_type
@@ -137,11 +155,16 @@ defmodule Portico.Resource do
         description: "Portico.Resource requires a public read/1 callback"
     end
 
-    metadata = Module.get_attribute(env.module, :portico_resource)
+    {verifier, metadata} =
+      env.module |> Module.get_attribute(:portico_resource) |> Map.pop!(:elicitation_verifier)
 
     quote do
       @doc false
       def __portico_resource__, do: unquote(Macro.escape(metadata))
+
+      @doc false
+      def __portico_verify_input__(state, request),
+        do: unquote(Macro.escape(verifier)).(state, request)
     end
   end
 end

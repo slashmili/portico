@@ -14,6 +14,7 @@ defmodule Portico.Request do
   the operation when checking elicitation continuations. Resource reads fill
   `server` and `resource_uri` instead; tool fields remain unset. Template variables
   are decoded once into string-keyed `resource_params`; static reads use an empty map.
+  `resource_route` identifies the module and declared URI/template for continuation verification.
 
   This struct does not authenticate its contents. The host application is
   responsible for establishing identity before assigning it to a request.
@@ -23,6 +24,7 @@ defmodule Portico.Request do
     :server,
     :tool_name,
     :resource_uri,
+    :resource_route,
     :arguments,
     :id,
     :method,
@@ -38,6 +40,7 @@ defmodule Portico.Request do
           server: module() | nil,
           tool_name: String.t() | nil,
           resource_uri: String.t() | nil,
+          resource_route: {module(), String.t()} | nil,
           resource_params: %{optional(String.t()) => String.t()},
           arguments: map() | nil,
           id: String.t() | integer() | nil,

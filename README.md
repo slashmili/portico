@@ -127,7 +127,9 @@ not need to match the output schema. Try the example's `summarize` tool.
 Text and binary resources support static URIs and templates with whole path variables, with
 a `read_resource` test helper. See the example handbook and handbook-section resources.
 
-Resource reads can return one item or a list with per-item URI and MIME metadata.
+Resource reads can return one item or a list with per-item URI and MIME metadata,
+or request a form and resume through `handle_input/3`. See `company://welcome`
+in the example.
 
 Only MCP **2026-07-28** is implemented. Prompts, subscriptions, stdio,
 and legacy protocol versions are outside the current scope.

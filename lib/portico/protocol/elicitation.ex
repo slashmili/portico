@@ -2,6 +2,50 @@ defmodule Portico.Protocol.Elicitation do
   @moduledoc false
   alias Portico.Input
 
+  def resume(module, answer, state, request, allowed_modes \\ [:form, :url]) do
+    if not function_exported?(module, :handle_input, 3) do
+      {:error, :missing_input_callback}
+    else
+      with {:ok, envelope} <- open_input(state, request),
+           true <- envelope.form.mode in allowed_modes,
+           :ok <- require_support(request, envelope.form.mode),
+           {:ok, answer} <- match_answer(answer, envelope.form),
+           {:ok, verified_state} <- verify_input(module, state, request) do
+        case validate_answer(answer, envelope.form) do
+          :ok -> module.handle_input(answer, verified_state, request)
+          :retry -> {:ok, envelope.form, envelope.state}
+        end
+      else
+        false -> {:input_error, :invalid_params}
+        other -> other
+      end
+    end
+  end
+
+  defp open_input(state, request) do
+    case Portico.Elicitation.open(state, request) do
+      {:error, :invalid_request_state} -> {:input_error, :invalid_request_state}
+      other -> other
+    end
+  end
+
+  defp verify_input(module, state, request) do
+    case module.__portico_verify_input__(state, request) do
+      {:ok, _} = ok -> ok
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_verifier_return}
+    end
+  end
+
+  defp validate_answer(:missing, _form), do: :retry
+
+  defp validate_answer({:accept, content}, form) do
+    {_schema, validator} = Portico.Schema.build!(form.schema, __ENV__)
+    if Portico.Schema.valid?(validator, content), do: :ok, else: :retry
+  end
+
+  defp validate_answer(_answer, _form), do: :ok
+
   def supported?(request, mode \\ :form)
 
   def supported?(request, :form) do

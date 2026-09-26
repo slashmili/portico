@@ -102,15 +102,24 @@ defmodule Portico.Server.Compiler do
   end
 
   def resource_metadata!(options, env) do
-    options!(options, [:name, :description, :mime_type], "resource", env)
+    options!(options, [:name, :description, :mime_type, :elicitation_verifier], "resource", env)
     nonempty_string!(options[:name], "resource name", env)
 
-    for {key, value} <- options do
+    for {key, value} <- options, key != :elicitation_verifier do
       unless is_binary(value) and String.valid?(value),
         do: error!(env, "expected resource #{inspect(key)} to be a UTF-8 string")
     end
 
-    Map.new(options)
+    verifier = Keyword.get(options, :elicitation_verifier, &Portico.Elicitation.verify/2)
+
+    unless is_function(verifier, 2) and Function.info(verifier, :type) == {:type, :external},
+      do:
+        error!(
+          env,
+          "expected :elicitation_verifier to be an external function capture of arity 2"
+        )
+
+    Map.put(Map.new(options), :elicitation_verifier, verifier)
   end
 
   def resource!(uri, module, env) do

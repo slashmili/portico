@@ -7,11 +7,11 @@ defmodule Portico.Elicitation do
       config :portico, MyApp.MCP, elicitation_key: System.fetch_env!("ELICITATION_KEY")
 
   Continuations expire after five minutes and bind the form or URL and application state
-  to the server, tool, and original arguments. They are signed, not encrypted or
+  to the server and either tool/arguments or resource route/requested URI. They are signed, not encrypted or
   single-use. Keep secrets out of state. Changing the key invalidates existing
   tokens; instances sharing a key can resume each other's tokens.
 
-  A tool may set `elicitation_verifier: &MyApp.Elicitation.verify/2`. The function
+  A tool or resource may set `elicitation_verifier: &MyApp.Elicitation.verify/2`. The function
   receives the wire token and fresh request and returns `{:ok, application_state}`
   or `{:error, reason}`. It can call `Portico.Elicitation.verify/2` then enforce
   identity or application policy. Portico always checks the signed input envelope
@@ -37,6 +37,8 @@ defmodule Portico.Elicitation do
         server: request.server,
         tool: request.tool_name,
         arguments: request.arguments,
+        resource_route: request.resource_route,
+        resource_uri: request.resource_uri,
         form: form,
         state: state
       }
@@ -54,7 +56,9 @@ defmodule Portico.Elicitation do
            Plug.Crypto.verify(key, @salt, token, max_age: 300),
          true <-
            payload.server == request.server and payload.tool == request.tool_name and
-             payload.arguments == request.arguments do
+             payload.arguments == request.arguments and
+             Map.get(payload, :resource_route) == request.resource_route and
+             Map.get(payload, :resource_uri) == request.resource_uri do
       {:ok, payload}
     else
       {:error, :elicitation_key_missing} = error -> error

@@ -141,7 +141,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertIsNotNone(client.server_capabilities.resources)
                 listing = await client.list_resources()
-                self.assertEqual(len(listing.resources), 3)
+                self.assertEqual(len(listing.resources), 4)
                 resource = next(item for item in listing.resources if str(item.uri) == "company://handbook")
                 self.assertEqual(str(resource.uri), "company://handbook")
                 self.assertEqual(resource.name, "handbook")
@@ -166,6 +166,56 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     await client.read_resource("company://missing")
                 self.assertEqual(caught.exception.error.code, -32602)
                 self.assertEqual(caught.exception.error.message, "Resource not found")
+
+    async def test_welcome_resource_form(self):
+        for action, language, expected in [("accept", "de", "Willkommen"),
+                                            ("accept", "en", "Welcome"),
+                                            ("decline", None, "Welcome"),
+                                            ("cancel", None, "Welcome")]:
+            async def on_form(_context, params):
+                self.assertEqual(params.requested_schema["properties"]["language"]["enum"], ["en", "de"])
+                return ElicitResult(action=action, content={"language": language} if language else None)
+
+            async with asyncio.timeout(15):
+                async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                    result = await client.read_resource("company://welcome")
+                    self.assertEqual(result.contents[0].text, expected)
+                    self.assertEqual(str(result.contents[0].uri), "company://welcome")
+                    self.assertEqual((result.cache_scope, result.ttl_ms), ("private", 0))
+
+    async def test_welcome_resource_reasks_invalid_answer(self):
+        seen = []
+        async def on_form(_context, _params):
+            seen.append(True)
+            return ElicitResult(action="accept", content={"language": "xx" if len(seen) == 1 else "de"})
+
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                result = await client.read_resource("company://welcome")
+                self.assertEqual(result.contents[0].text, "Willkommen")
+                self.assertEqual(len(seen), 2)
+
+    async def test_welcome_resource_rejects_tampered_state(self):
+        async def on_form(_context, _params):
+            return ElicitResult(action="cancel")
+
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10, elicitation_callback=on_form) as client:
+                pending = await client.session.read_resource("company://welcome", allow_input_required=True)
+                self.assertEqual(pending.result_type, "input_required")
+                with self.assertRaises(MCPError) as caught:
+                    await client.session.read_resource(
+                        "company://welcome", request_state=pending.request_state + "x",
+                        allow_input_required=True,
+                    )
+                self.assertEqual(caught.exception.error.code, -32602)
+
+    async def test_welcome_resource_requires_form_capability(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                with self.assertRaises(MCPError) as caught:
+                    await client.read_resource("company://welcome")
+                self.assertEqual(caught.exception.error.code, -32021)
 
     async def test_policy_lookup(self):
         async with asyncio.timeout(15):

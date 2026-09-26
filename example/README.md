@@ -700,7 +700,7 @@ invalid declarations fail at compilation.
 For a single text or binary item, Portico supplies the concrete requested URI
 and declared MIME type. List reads preserve each item's URI and MIME type. Resources are listed in URI order;
 listing and reading use private caching with zero TTL. There is no pagination;
-cursors are rejected. Subscriptions and elicitation during reads
+cursors are rejected. Subscriptions and URL elicitation during reads
 remain future slices. Python E2E checks both catalogs, text content, decoded
 template variables and missing URI errors.
 
@@ -867,3 +867,72 @@ The helper preserves the error tuple; MCP receives `-32602` with the message
 “Resource not found”. Malformed requests retain “Invalid params”. Other callback
 errors remain sanitized internal errors (`-32603`). This applies to static and
 template resources. Do not return an empty contents list for a missing entry.
+
+
+## Forms during resource reads
+
+Read `company://welcome` in Inspector's **Resources** tab. The server asks for
+`en` or `de`, then returns “Welcome” or “Willkommen”. Decline and cancel return
+the default English greeting. The client must advertise form elicitation support.
+This uses the example's existing elicitation signing key configuration.
+
+Resource modules use the same pattern as tool forms:
+
+```elixir
+def read(_request) do
+  {:ok, form} =
+    Portico.Input.form("Choose a language",
+      schema: %{
+        type: "object",
+        properties: %{language: %{type: "string", enum: ["en", "de"]}},
+        required: ["language"]
+      }
+    )
+
+  {:ok, form, "welcome:v1"}
+end
+
+def handle_input({:accept, %{"language" => language}}, "welcome:v1", _request) do
+  text = if language == "de", do: "Willkommen", else: "Welcome"
+  {:ok, content} = Portico.Resource.text(text)
+  {:ok, content}
+end
+
+def handle_input(action, "welcome:v1", _request) when action in [:decline, :cancel] do
+  {:ok, content} = Portico.Resource.text("Welcome")
+  {:ok, content}
+end
+```
+
+The input-required response ends the first HTTP request. The client sends the
+answer in a new `resources/read` request for the same URI, echoing `requestState`.
+Portico validates the signed continuation and form content before calling
+`handle_input/3`. Missing or invalid content reissues the form. A handler may
+return a single content item, a list, another form, or an error tuple.
+
+In Elixir tests:
+
+```elixir
+mcp = %{mcp | client_capabilities: %{"elicitation" => %{"form" => %{}}}}
+{:ok, _form, state} = read_resource mcp, "company://welcome"
+
+{:ok, content} =
+  read_resource mcp, "company://welcome",
+    request_state: state,
+    input_responses: %{"form" => %{"action" => "accept", "content" => %{"language" => "de"}}}
+
+assert content.text == "Willkommen"
+```
+
+Continuations expire after five minutes and bind the server, resource module and
+route, exact requested URI, form schema, and application state. Changing the key
+invalidates saved replies. State is signed, not encrypted or single-use; keep
+secrets out of it. Fresh assigns come from each request, not from the token.
+
+For application identity checks, resources accept the same optional
+`elicitation_verifier: &MyApp.Elicitation.verify/2` as tools. Portico always
+checks the signed envelope first. Signing does not authenticate a user.
+
+Missing form support returns `{:error, :form_not_supported}` in helpers and MCP
+`-32021`. Invalid tokens return `{:error, :invalid_request_state}` and MCP
+`-32602`. Resource URL elicitation and streaming remain future slices.

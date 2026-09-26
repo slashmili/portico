@@ -175,15 +175,27 @@ defmodule Portico.Test do
 
   Accepts a server module or test context and an optional `assigns:` override.
   Returns `{:ok, %Portico.Resource{}}` with the requested URI and declared MIME type,
-  a list callback returns `{:ok, [content]}` preserving each item's URI/MIME type.
+  while a list callback returns `{:ok, [content]}` preserving each item's URI/MIME type.
   Failures return `{:error, reason}`. Callback exceptions remain visible in tests.
+
+  Forms return `{:ok, %Portico.Input{}, signed_state}`. Set
+  `%{"elicitation" => %{"form" => %{}}}` in context client capabilities and retry
+  the same URI with `request_state:` and `input_responses:`, as for tool forms.
+  Resource replies support forms only; URL inputs and streaming remain unsupported.
   """
   @spec read_resource(module() | Context.t(), String.t(), keyword()) ::
-          {:ok, Portico.Resource.t() | [Portico.Resource.t()]} | {:error, term()}
+          {:ok, Portico.Resource.t() | [Portico.Resource.t()]}
+          | {:ok, Portico.Input.t(), String.t()}
+          | {:error, term()}
   def read_resource(target, uri, options \\ [])
 
   def read_resource(%Context{} = context, uri, options) do
-    with true <- Keyword.keyword?(options) and Enum.all?(Keyword.keys(options), &(&1 == :assigns)),
+    with true <-
+           Keyword.keyword?(options) and
+             Enum.all?(
+               Keyword.keys(options),
+               &(&1 in [:assigns, :request_state, :input_responses])
+             ),
          :ok <- validate_server(context.server),
          :ok <- validate_assigns(context.assigns),
          assigns = Keyword.get(options, :assigns, %{}),
@@ -198,11 +210,22 @@ defmodule Portico.Test do
           do: metadata,
           else: Map.put(metadata, "io.modelcontextprotocol/clientInfo", context.client_info)
 
+      params =
+        Enum.reduce(
+          [request_state: "requestState", input_responses: "inputResponses"],
+          %{"uri" => uri, "_meta" => metadata},
+          fn {option, key}, params ->
+            if Keyword.has_key?(options, option),
+              do: Map.put(params, key, options[option]),
+              else: params
+          end
+        )
+
       message = %{
         "jsonrpc" => "2.0",
         "id" => 1,
         "method" => "resources/read",
-        "params" => %{"uri" => uri, "_meta" => metadata}
+        "params" => params
       }
 
       Dispatcher.read_resource_request(

@@ -1,6 +1,7 @@
 defmodule Portico.Protocol.Resources do
   @moduledoc false
-  alias Portico.{Resource, Server}
+  alias Portico.{Input, Resource, Server}
+  alias Portico.Protocol.{Dispatcher, Elicitation}
 
   def metadata(resource) do
     {key, uri} =
@@ -20,18 +21,22 @@ defmodule Portico.Protocol.Resources do
       not Resource.valid_uri?(uri) ->
         {:error, :invalid_params}
 
-      Map.has_key?(params, "requestState") or Map.has_key?(params, "inputResponses") ->
-        {:error, :invalid_params}
-
       true ->
         case Enum.find(Server.resources(server), &(&1.uri == uri)) do
-          nil -> read_template(server, uri, request)
-          resource -> invoke(resource, %{request | server: server, resource_uri: uri})
+          nil ->
+            read_template(server, uri, request, Elicitation.retry(params))
+
+          resource ->
+            invoke(
+              resource,
+              %{request | server: server, resource_uri: uri},
+              Elicitation.retry(params)
+            )
         end
     end
   end
 
-  defp read_template(server, uri, request) do
+  defp read_template(server, uri, request, retry) do
     matches =
       for resource <- Server.resource_templates(server),
           {:ok, params} <- [Portico.Resource.Template.match(resource.matcher, uri)],
@@ -42,15 +47,43 @@ defmodule Portico.Protocol.Resources do
         {:error, :resource_not_found}
 
       [{resource, params}] ->
-        invoke(resource, %{request | server: server, resource_uri: uri, resource_params: params})
+        invoke(
+          resource,
+          %{request | server: server, resource_uri: uri, resource_params: params},
+          retry
+        )
 
       _ ->
         {:error, :ambiguous_resource}
     end
   end
 
-  defp invoke(resource, request) do
-    case resource.module.read(request) do
+  defp invoke(_resource, _request, {:error, _} = error), do: error
+
+  defp invoke(resource, request, retry) do
+    route = Map.get(resource, :uri, resource[:uri_template])
+    request = %{request | resource_route: {resource.module, route}}
+
+    outcome =
+      case retry do
+        :initial ->
+          resource.module.read(request)
+
+        {:resume, answer, token} ->
+          if function_exported?(resource.module, :handle_input, 3),
+            do: Elicitation.resume(resource.module, answer, token, request, [:form]),
+            else: {:input_error, :invalid_params}
+      end
+
+    case outcome do
+      {:ok, %Input{mode: :form} = form, state} ->
+        if function_exported?(resource.module, :handle_input, 3),
+          do: Dispatcher.input_result(form, state, request),
+          else: {:error, :missing_input_callback}
+
+      {:input_error, _} = error ->
+        error
+
       {:ok, %Resource{} = value} ->
         case encode_content(value) do
           {:ok, content, payload} ->
