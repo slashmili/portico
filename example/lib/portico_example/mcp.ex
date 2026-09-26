@@ -1,6 +1,7 @@
 defmodule PorticoExample.MCP do
   use Portico.Server, name: "portico-example", version: "0.1.0"
 
+  prompt "explain_code", PorticoExample.Prompts.ExplainCode
   prompt "review_code", PorticoExample.Prompts.ReviewCode
 
   tool "add", PorticoExample.Tools.Add

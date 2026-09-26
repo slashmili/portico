@@ -19,7 +19,7 @@ import urllib.error
 from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.shared.exceptions import MCPError
-from mcp.types import TextContent, ElicitResult
+from mcp.types import TextContent, ElicitResult, PromptReference, ResourceTemplateReference
 
 URL = os.environ.get("MCP_URL")
 PROTOCOL_VERSION = "2026-07-28"
@@ -179,13 +179,39 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.error.code, -32021)
                 self.assertEqual(caught.exception.error.data, {"requiredCapabilities": {"elicitation": {"url": {}}}})
 
+    async def test_completion(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                self.assertIsNotNone(client.server_capabilities.completions)
+                prompt_ref = PromptReference(type="ref/prompt", name="explain_code")
+                result = await client.complete(prompt_ref, {"name": "language", "value": "e"}, context_arguments={"code": "1 + 1"})
+                self.assertEqual(result.completion.values, ["elixir", "erlang"])
+                self.assertEqual(result.completion.total, 2)
+                self.assertFalse(result.completion.has_more)
+                prompt = await client.get_prompt("explain_code", {"language": "elixir", "code": "1 + 1"})
+                self.assertEqual(prompt.messages[0].content.text, "Explain this elixir code:\n\n1 + 1")
+                result = await client.complete(prompt_ref, {"name": "code", "value": ""})
+                self.assertEqual(result.completion.values, [])
+                resource_ref = ResourceTemplateReference(type="ref/resource", uri="company://policies/{name}")
+                result = await client.complete(resource_ref, {"name": "name", "value": "le"})
+                self.assertEqual(result.completion.values, ["leave"])
+                result = await client.complete(resource_ref, {"name": "name", "value": "zz"})
+                self.assertEqual(result.completion.values, [])
+                for ref, argument in [
+                    (PromptReference(type="ref/prompt", name="missing"), {"name": "language", "value": ""}),
+                    (prompt_ref, {"name": "unknown", "value": ""}),
+                ]:
+                    with self.assertRaises(MCPError) as caught:
+                        await client.complete(ref, argument)
+                    self.assertEqual(caught.exception.error.code, -32602)
+
     async def test_prompts(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertIsNotNone(client.server_capabilities.prompts)
                 listing = await client.list_prompts()
-                self.assertEqual(len(listing.prompts), 1)
-                prompt = listing.prompts[0]
+                self.assertEqual(len(listing.prompts), 2)
+                prompt = next(item for item in listing.prompts if item.name == "review_code")
                 self.assertEqual(prompt.name, "review_code")
                 self.assertEqual(prompt.description, "Prepare a code review request.")
                 self.assertEqual(prompt.arguments[0].name, "code")

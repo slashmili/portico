@@ -168,6 +168,77 @@ defmodule Portico.Test do
   def call_tool(_target, _name, _arguments, _options), do: {:error, :invalid_target}
 
   @doc """
+  Completes a prompt argument or resource-template variable through protocol validation.
+
+      {:ok, result} = complete mcp, {:prompt, "explain_code"}, "language", "el"
+      assert result.values == ["elixir"]
+
+  Use `{:resource, "company://policies/{name}"}` for templates. Options are
+  `arguments:` (previously resolved string values) and `assigns:`. Returns
+  `{:ok, %{values: values, total: count, has_more: boolean}}` or `{:error, reason}`.
+  Application errors remain tuples and exceptions surface in tests.
+  """
+  @spec complete(
+          module() | Context.t(),
+          {:prompt | :resource, String.t()},
+          String.t(),
+          String.t(),
+          keyword()
+        ) ::
+          {:ok, map()} | {:error, term()}
+  def complete(target, ref, argument, prefix, options \\ [])
+
+  def complete(%Context{} = context, ref, argument, prefix, options) do
+    with true <-
+           Keyword.keyword?(options) and
+             Enum.all?(Keyword.keys(options), &(&1 in [:assigns, :arguments])),
+         :ok <- validate_server(context.server),
+         :ok <- validate_assigns(context.assigns),
+         assigns = Keyword.get(options, :assigns, %{}),
+         :ok <- validate_assigns(assigns),
+         {:ok, reference} <- completion_reference(ref) do
+      metadata = %{
+        "io.modelcontextprotocol/protocolVersion" => context.protocol_version,
+        "io.modelcontextprotocol/clientCapabilities" => context.client_capabilities
+      }
+
+      metadata =
+        if is_nil(context.client_info),
+          do: metadata,
+          else: Map.put(metadata, "io.modelcontextprotocol/clientInfo", context.client_info)
+
+      message = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "completion/complete",
+        "params" => %{
+          "ref" => reference,
+          "argument" => %{"name" => argument, "value" => prefix},
+          "context" => %{"arguments" => Keyword.get(options, :arguments, %{})},
+          "_meta" => metadata
+        }
+      }
+
+      Dispatcher.complete_request(context.server, message, Map.merge(context.assigns, assigns))
+    else
+      false -> {:error, :invalid_options}
+      error -> error
+    end
+  end
+
+  def complete(server, ref, argument, prefix, options) when is_atom(server),
+    do: complete(%Context{server: server}, ref, argument, prefix, options)
+
+  def complete(_, _, _, _, _), do: {:error, :invalid_target}
+
+  defp completion_reference({:prompt, name}), do: {:ok, %{"type" => "ref/prompt", "name" => name}}
+
+  defp completion_reference({:resource, uri}),
+    do: {:ok, %{"type" => "ref/resource", "uri" => uri}}
+
+  defp completion_reference(_), do: {:error, :invalid_params}
+
+  @doc """
   Gets a declared prompt through protocol validation without HTTP.
 
       {:ok, prompt} = get_prompt mcp, "review_code", %{"code" => "1 + 1"}

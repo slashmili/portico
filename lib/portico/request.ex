@@ -17,6 +17,11 @@ defmodule Portico.Request do
   are decoded once into string-keyed `resource_params`; static reads use an empty map.
   `resource_route` identifies the module and declared URI/template for continuation verification.
 
+  Completion fills `server`, the referenced `prompt_name` or template
+  `resource_uri`/`resource_route`, and `arguments` with previously resolved values.
+  For completion, resource_uri is the template reference, not a concrete read URI.
+  Partial arguments are allowed; resource_params remains empty.
+
   This struct does not authenticate its contents. The host application is
   responsible for establishing identity before assigning it to a request.
   """

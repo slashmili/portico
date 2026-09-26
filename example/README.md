@@ -1061,6 +1061,69 @@ return `{:error, :invalid_prompt}`. Invalid declarations fail at compilation.
 
 `prompts/list` is sorted by name and uses private caching with zero TTL. Cursors
 are rejected in this slice. `Prompt.text/1` creates one user-role text message.
-Completion, multiple/rich messages, prompt elicitation and subscriptions remain
+Multiple/rich messages, prompt elicitation and subscriptions remain
 follow-ups. Include `import_deps: [:portico]` in your formatter configuration to
 keep `prompt` and `get_prompt` calls without parentheses.
+
+
+## Argument completion
+
+Completion suggests values for **prompt arguments** and **resource-template
+variables**. It does not apply to tool inputs or elicitation forms.
+
+The separate `explain_code` prompt suggests `elixir`, `erlang`, or `python`
+for its `language` argument. The policy resource template suggests `expenses`
+and `leave` for `name`. In Inspector, select the prompt or resource template
+and request suggestions while entering the argument value, where supported by
+the client UI. Typing `e` for the prompt language returns `elixir` and `erlang`;
+typing `le` for the policy name returns `leave`.
+
+Put an optional callback in the prompt or resource module:
+
+```elixir
+@impl true
+def complete("language", prefix, _request) do
+  {:ok, Enum.filter(["elixir", "erlang", "python"], &String.starts_with?(&1, prefix))}
+end
+
+def complete(_, _, _), do: {:ok, []}
+```
+
+Portico validates the reference, declared argument name and string-valued context
+before invoking the callback. The current value is the second argument; previously
+resolved values arrive in `request.arguments`. Those values may be partial:
+required prompt arguments need not all be present for completion. Fresh
+application assigns remain available for identity checks and contextual suggestions.
+For example, framework suggestions can depend on `request.arguments["language"]`.
+
+The callback owns filtering and relevance order. Return all matches as a list;
+Portico returns the first 100 and derives `total` and `hasMore`. This initial API
+does not accept separately supplied totals or lazy/database pagination results.
+Suggestions do not restrict values accepted later by a prompt or resource.
+
+Test the same protocol path without HTTP:
+
+```elixir
+{:ok, result} =
+  complete mcp, {:prompt, "explain_code"}, "language", "e",
+    arguments: %{"code" => "1 + 1"}
+
+assert result == %{values: ["elixir", "erlang"], total: 2, has_more: false}
+
+{:ok, result} =
+  complete mcp, {:resource, "company://policies/{name}"}, "name", "le"
+
+assert result.values == ["leave"]
+```
+
+`complete/4,5` accepts a server module or test context, plus optional
+`arguments:` and `assigns:`. Resource references use the exact declared template,
+not an expanded URI. No `get/2` or `read/1` callback runs during completion.
+
+A server advertises `completions` when any prompt or resource template implements
+`complete/3`. Other declarations without callbacks return no suggestions for
+valid argument names. Without any completion callbacks, the method returns
+`-32601`. Invalid references, unknown arguments and malformed context return
+`-32602`; malformed results and callback failures become sanitized `-32603`
+over HTTP. Helpers preserve callback errors and expose application exceptions.
+Host applications remain responsible for authorization and request rate limits.

@@ -58,6 +58,10 @@ defmodule Portico.Resource do
   return `:invalid_request_state` in helpers and MCP `-32602`.
   URL acceptance is consent, not proof of browser completion; application code
   must check its own workflow state and identity before returning protected content.
+  Implement optional `complete/3` for variables in declared resource templates.
+  It receives the variable name, current value and request.arguments containing
+  previously resolved variables. The reference must be the exact declared template;
+  no read callback is invoked. Static resource URIs have no completion variables.
   Resource streaming and subscriptions are not implemented yet. Listings and reads use private caching
   with zero TTL. Catalogs are static and are not filtered by caller identity.
   """
@@ -73,6 +77,16 @@ defmodule Portico.Resource do
   @callback read(Portico.Request.t()) :: reply()
   @callback handle_input(Portico.Input.answer(), term(), Portico.Request.t()) :: reply()
   @optional_callbacks handle_input: 3
+
+  @doc """
+  Suggests argument values for a prompt or resource template. Optional callback.
+  Previously resolved arguments are available in request.arguments.
+  Return all matches in relevance order; Portico emits at most 100 and derives
+  total/hasMore. No callback means no suggestions for that declaration.
+  """
+  @callback complete(String.t(), String.t(), Portico.Request.t()) ::
+              {:ok, [String.t()]} | {:error, term()}
+  @optional_callbacks complete: 3
 
   @type content_error ::
           :invalid_text | :invalid_blob | :invalid_options | :invalid_uri | :invalid_mime_type

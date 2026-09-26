@@ -3,7 +3,7 @@ defmodule Portico.Protocol.Dispatcher do
   require Logger
 
   alias Portico.{Input, Request, Result, Schema, Server}
-  alias Portico.Protocol.{Elicitation, Encoder, Error, Prompts, Resources, Validation}
+  alias Portico.Protocol.{Completion, Elicitation, Encoder, Error, Prompts, Resources, Validation}
 
   @supported_versions ["2026-07-28"]
 
@@ -90,6 +90,27 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, %{"method" => "prompts/get", "params" => params}, context} ->
         case Prompts.get(server, params, context) do
           {:ok, prompt, _fields} -> {:ok, prompt}
+          {:callback_error, reason} -> {:error, reason}
+          error -> error
+        end
+
+      {:ok, _, _} ->
+        {:error, :method_not_found}
+
+      :no_response ->
+        {:error, :invalid_request}
+
+      error ->
+        error
+    end
+  end
+
+  @doc false
+  def complete_request(server, message, assigns) do
+    case prepare(message, assigns) do
+      {:ok, %{"method" => "completion/complete", "params" => params}, context} ->
+        case Completion.complete(server, params, context) do
+          {:ok, result, _fields} -> {:ok, result}
           {:callback_error, reason} -> {:error, reason}
           error -> error
         end
@@ -214,6 +235,21 @@ defmodule Portico.Protocol.Dispatcher do
     _ -> {:reply, Error.response(:internal_error, context.id)}
   end
 
+  defp dispatch_method(server, %{"method" => "completion/complete", "params" => params}, context) do
+    case Completion.complete(server, params, context) do
+      {:ok, _result, fields} ->
+        complete(server, context.id, fields)
+
+      {:error, reason} when reason in [:invalid_params, :method_not_found] ->
+        {:reply, Error.response(reason, context.id)}
+
+      _ ->
+        {:reply, Error.response(:internal_error, context.id)}
+    end
+  rescue
+    _ -> {:reply, Error.response(:internal_error, context.id)}
+  end
+
   defp dispatch_method(_server, request, _context) do
     {:reply, Error.response(:method_not_found, request["id"])}
   end
@@ -226,7 +262,14 @@ defmodule Portico.Protocol.Dispatcher do
         do: capabilities,
         else: Map.put(capabilities, "resources", %{})
 
-    if Server.prompts(server) == [], do: capabilities, else: Map.put(capabilities, "prompts", %{})
+    capabilities =
+      if Server.prompts(server) == [],
+        do: capabilities,
+        else: Map.put(capabilities, "prompts", %{})
+
+    if Completion.supported?(server),
+      do: Map.put(capabilities, "completions", %{}),
+      else: capabilities
   end
 
   defp read_resource(server, params, context) do

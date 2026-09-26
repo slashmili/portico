@@ -27,12 +27,26 @@ defmodule Portico.Prompt do
   Return `{:ok, prompt}` or `{:error, reason}`. Helpers preserve callback failures
   and expose application exceptions; HTTP sanitizes them as internal errors.
   This slice supports one user-role text message, static listing and get.
-  Completion, multiple/rich messages, elicitation and subscriptions are follow-ups.
+  Implement optional `complete/3` to suggest declared argument values. It receives
+  the argument name, current value and request with previously resolved
+  `request.arguments`. Return `{:ok, values}` in relevance order or an error tuple.
+  Suggestions do not constrain the values accepted by get/2.
+  Multiple/rich messages, elicitation and subscriptions are follow-ups.
   """
   defstruct messages: []
   @type t :: %__MODULE__{messages: [map()]}
   @callback get(%{optional(String.t()) => String.t()}, Portico.Request.t()) ::
               {:ok, t()} | {:error, term()}
+
+  @doc """
+  Suggests argument values for a prompt or resource template. Optional callback.
+  Previously resolved arguments are available in request.arguments.
+  Return all matches in relevance order; Portico emits at most 100 and derives
+  total/hasMore. No callback means no suggestions for that declaration.
+  """
+  @callback complete(String.t(), String.t(), Portico.Request.t()) ::
+              {:ok, [String.t()]} | {:error, term()}
+  @optional_callbacks complete: 3
 
   @doc "Builds one user-role text message, returning an error tuple for invalid text."
   @spec text(String.t()) :: {:ok, t()} | {:error, :invalid_text}

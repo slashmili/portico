@@ -9,6 +9,12 @@ defmodule PorticoExample.Resources.Policy do
     "expenses" => "Keep receipts for business expenses."
   }
 
+  @impl true
+  def complete("name", prefix, _request) do
+    {:ok, @policies |> Map.keys() |> Enum.sort() |> Enum.filter(&String.starts_with?(&1, prefix))}
+  end
+
+  @impl true
   def read(%{resource_params: %{"name" => name}}) do
     case Map.fetch(@policies, name) do
       {:ok, text} ->
