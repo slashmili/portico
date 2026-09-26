@@ -26,9 +26,9 @@ defmodule Portico.Schema do
     "contentSchema"
   ]
 
-  def build!(schema, env) do
+  def build!(schema, env, kind \\ :input_schema) do
     normalized = normalize(schema)
-    check_schema!(normalized)
+    check_schema!(normalized, kind)
 
     case JSV.validate(normalized, @meta_validator, cast: false) do
       {:ok, _} -> :ok
@@ -47,7 +47,7 @@ defmodule Portico.Schema do
       raise CompileError,
         file: env.file,
         line: env.line,
-        description: "invalid :input_schema: #{Exception.message(error)}"
+        description: "invalid #{inspect(kind)}: #{Exception.message(error)}"
   end
 
   def valid?(validator, data) do
@@ -135,8 +135,8 @@ defmodule Portico.Schema do
   defp normalize_key(key) when is_binary(key), do: normalize(key)
   defp normalize_key(_key), do: raise(ArgumentError, "expected atom or string map keys")
 
-  defp check_schema!(schema) when is_map(schema) do
-    if Map.has_key?(schema, "x-mcp-header") do
+  defp check_schema!(schema, kind) when is_map(schema) do
+    if kind == :input_schema and Map.has_key?(schema, "x-mcp-header") do
       raise ArgumentError,
             "x-mcp-header is not supported; remove the annotation from the input schema " <>
               "until Portico supports custom MCP parameter header validation"
@@ -151,18 +151,18 @@ defmodule Portico.Schema do
         children = schema[keyword],
         is_map(children),
         {_name, child} <- children,
-        do: check_schema!(child)
+        do: check_schema!(child, kind)
 
     for keyword <- @schema_lists,
         children = schema[keyword],
         is_list(children),
         child <- children,
-        do: check_schema!(child)
+        do: check_schema!(child, kind)
 
     for keyword <- @schema_values,
         Map.has_key?(schema, keyword),
-        do: check_schema!(schema[keyword])
+        do: check_schema!(schema[keyword], kind)
   end
 
-  defp check_schema!(_schema), do: :ok
+  defp check_schema!(_schema, _kind), do: :ok
 end

@@ -34,6 +34,23 @@ defmodule Portico.Protocol.Encoder do
 
   def tool_result(_result), do: {:error, :invalid_result}
 
+  # Validate the normalized wire value, including manually constructed Results.
+  def tool_result(result, validator) do
+    with {:ok, fields} <- tool_result(result) do
+      cond do
+        is_nil(validator) or fields["isError"] ->
+          {:ok, fields}
+
+        Map.has_key?(fields, "structuredContent") and
+            Portico.Schema.valid?(validator, fields["structuredContent"]) ->
+          {:ok, fields}
+
+        true ->
+          {:error, :invalid_output}
+      end
+    end
+  end
+
   defp structured_content(fields, :not_set), do: {:ok, fields}
 
   defp structured_content(fields, value) do

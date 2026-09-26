@@ -195,6 +195,11 @@ defmodule Portico.Protocol.Dispatcher do
   defp tool_metadata(tool) do
     metadata = %{"name" => tool.name, "inputSchema" => tool.input_schema}
 
+    metadata =
+      if Map.has_key?(tool, :output_schema),
+        do: Map.put(metadata, "outputSchema", tool.output_schema),
+        else: metadata
+
     case Map.fetch(tool, :description) do
       {:ok, description} -> Map.put(metadata, "description", description)
       :error -> metadata
@@ -263,8 +268,11 @@ defmodule Portico.Protocol.Dispatcher do
                   do: {:ok, form, state},
                   else: {:error, :missing_input_callback}
 
-              {:ok, %Result{}} = reply ->
-                reply
+              {:ok, %Result{} = result} = reply ->
+                case Encoder.tool_result(result, module.__portico_output_validator__()) do
+                  {:ok, _fields} -> reply
+                  {:error, _} = error -> error
+                end
 
               {:input_error, _} = error ->
                 error

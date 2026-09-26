@@ -43,7 +43,9 @@ defmodule Portico.Result do
   The returned `structured_content` contains normalized data. Ordinary text
   results use `:not_set` to omit the wire field, distinct from explicit JSON null.
   `text/2` appends commentary and `put_error/2` changes the error flag while
-  preserving structured content. Output-schema declarations are not supported yet.
+  preserving structured content. A tool may declare `:output_schema` with
+  `Portico.Tool`; successful completed results are checked against it by Portico,
+  rather than by this constructor.
 
   ## Examples
 

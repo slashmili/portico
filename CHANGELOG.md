@@ -8,7 +8,8 @@ Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
   argument validation.
 - Plug transport with discovery, tool listing, request metadata validation, and
   application-controlled Logger output.
-- Text, structured JSON, and explicit tool-error results.
+- Text, structured JSON, and explicit tool-error results, with optional output
+  schemas checked at compilation and enforced on successful completed results.
 - Request-scoped progress streaming and form elicitation with signed continuation
   state, response validation, and optional application verification.
 - ExUnit helpers and a standalone example tested with the official Python MCP

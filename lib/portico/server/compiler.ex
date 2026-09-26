@@ -34,7 +34,13 @@ defmodule Portico.Server.Compiler do
   end
 
   def tool_metadata!(options, env) do
-    options!(options, [:description, :input_schema, :elicitation_verifier], "tool", env)
+    options!(
+      options,
+      [:description, :input_schema, :output_schema, :elicitation_verifier],
+      "tool",
+      env
+    )
+
     schema = Keyword.get(options, :input_schema)
 
     unless is_map(schema) and not is_struct(schema) do
@@ -49,6 +55,24 @@ defmodule Portico.Server.Compiler do
     end
 
     definition = %{input_schema: schema, validator: validator, elicitation_verifier: verifier}
+
+    definition =
+      case Keyword.fetch(options, :output_schema) do
+        :error ->
+          definition
+
+        {:ok, output_schema} ->
+          unless is_map(output_schema) and not is_struct(output_schema),
+            do: error!(env, "expected :output_schema to be a plain map")
+
+          {output_schema, output_validator} =
+            Portico.Schema.build!(output_schema, env, :output_schema)
+
+          Map.merge(definition, %{
+            output_schema: output_schema,
+            output_validator: output_validator
+          })
+      end
 
     case Keyword.fetch(options, :description) do
       {:ok, description} ->

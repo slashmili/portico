@@ -6,6 +6,12 @@ defmodule PorticoExample.Tools.Summarize do
       properties: %{numbers: %{type: "array", items: %{type: "integer"}}},
       required: ["numbers"],
       additionalProperties: false
+    },
+    output_schema: %{
+      type: "object",
+      properties: %{count: %{type: "integer", minimum: 0}, sum: %{type: "integer"}},
+      required: ["count", "sum"],
+      additionalProperties: false
     }
 
   @impl true

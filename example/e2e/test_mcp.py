@@ -94,6 +94,16 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(listing.ttl_ms, 0)
                 for listed_tool in listing.tools:
                     Draft202012Validator.check_schema(listed_tool.input_schema)
+                for listed_tool in listing.tools:
+                    if listed_tool.name == "summarize":
+                        self.assertEqual(listed_tool.output_schema, {
+                            "type": "object",
+                            "properties": {"count": {"type": "integer", "minimum": 0}, "sum": {"type": "integer"}},
+                            "required": ["count", "sum"], "additionalProperties": False,
+                        })
+                        Draft202012Validator.check_schema(listed_tool.output_schema)
+                    else:
+                        self.assertIsNone(listed_tool.output_schema)
                 tool = listing.tools[0]
                 Draft202012Validator.check_schema(tool.input_schema)
                 self.assertEqual(tool.description, "Add two integers.")
@@ -107,11 +117,15 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
     async def test_summarize(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
+                listing = await client.list_tools()
+                schema = next(tool.output_schema for tool in listing.tools if tool.name == "summarize")
+                validator = Draft202012Validator(schema)
                 for numbers, expected in [([2, 3, -1], {"count": 3, "sum": 4}), ([], {"count": 0, "sum": 0}), ([2.0], {"count": 1, "sum": 2})]:
                     with self.subTest(numbers=numbers):
                         result = await client.call_tool("summarize", {"numbers": numbers})
                         self.assertFalse(result.is_error)
                         self.assertEqual(result.structured_content, expected)
+                        validator.validate(result.structured_content)
                         self.assertEqual(len(result.content), 1)
                         self.assertEqual(json.loads(result.content[0].text), expected)
                 result = await client.call_tool("summarize", {"numbers": ["bad"]})

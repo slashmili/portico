@@ -19,7 +19,7 @@ defmodule Portico.Stream.Runner do
         try do
           case execution.module.handle_stream(execution.data, stream) do
             {:ok, %Result{} = result} ->
-              case Encoder.tool_result(result) do
+              case Encoder.tool_result(result, execution.module.__portico_output_validator__()) do
                 {:ok, _} -> {:ok, result}
                 {:error, _reason} = error -> error
               end

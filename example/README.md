@@ -80,7 +80,24 @@ An empty list returns zero for both values. The tool uses:
 `result.structured_content` exposes the normalized data in Elixir tests. Atom map
 keys become strings recursively. JSON arrays, scalars and null are supported too;
 unsupported values return `{:error, :invalid_structured_content}`. Use `case` when
-that error should be recoverable. This example does not declare an output schema.
+that error should be recoverable. The tool declares:
+
+```elixir
+output_schema: %{
+  type: "object",
+  properties: %{count: %{type: "integer", minimum: 0}, sum: %{type: "integer"}},
+  required: ["count", "sum"],
+  additionalProperties: false
+}
+```
+
+The declaration is checked at compilation and advertised as `outputSchema`.
+Portico requires every successful completed result to contain structured data
+matching it, without casts or defaults. A missing field or wrong type returns
+`{:error, :invalid_output}` in Elixir helpers and a generic internal error over
+HTTP. Streamed results and form continuations follow the same rule. Expected
+`is_error: true` results, including input validation errors, bypass the output
+schema. The Python tests validate the advertised schema and successful outputs.
 
 ## Test with the official Python MCP client
 

@@ -21,15 +21,15 @@ defmodule Portico.Tool do
   The server supplies the exposed name with `tool "add", MyApp.MCP.Tools.Add`.
   A tool module can be reused under different names or by multiple servers.
 
-  `:input_schema` must be a plain map; `:description` is an optional UTF-8
-  string. Schemas are checked at compilation against Draft 2020-12 and built
+  `:input_schema` and optional `:output_schema` must be plain maps.
+  `:description` is an optional UTF-8 string. Schemas are checked at compilation against Draft 2020-12 and built
   into an internal validator. Atom map keys are normalized recursively to strings;
   duplicate normalized keys and non-JSON values are rejected. Values such as
   types and required property names must be JSON strings, not atoms. Catalogs
   expose the normalized schema. JSV is an internal implementation detail.
-  `x-mcp-header` annotations are rejected at compilation because custom MCP
-  parameter header validation is not implemented. This applies to nested schemas
-  too; literal data in `const`, `enum`, `default`, and `examples` is unaffected.
+  `x-mcp-header` annotations in input schemas are rejected at compilation because
+  custom MCP parameter header validation is not implemented. This includes nested
+  input schemas; literal data in `const`, `enum`, `default`, and `examples` is unaffected.
 
   The initial dialect is `https://json-schema.org/draft/2020-12/schema`, also
   used when `$schema` is absent. Local references and bundled meta-schemas are
@@ -55,7 +55,18 @@ defmodule Portico.Tool do
 
   Use `Portico.Result.structured/1` for JSON data, including a serialized text
   fallback. It returns the same constructor tuple; match `{:ok, result}` and
-  return `{:ok, result}`. Output-schema declarations are not supported yet.
+  return `{:ok, result}`. An optional `output_schema: %{...}` uses the same
+  dialect, normalization, and local-reference rules as the input schema and is
+  advertised as `outputSchema` in tool listings. It may describe any JSON type.
+
+  When declared, every successful completed result must include matching
+  structured content. Validation runs after `call/2`, `handle_input/3`, and
+  `handle_stream/2`, without casting or inserting defaults. Missing or mismatched
+  output returns `{:error, :invalid_output}` in tests and a sanitized internal
+  error over HTTP (500, or the final event within an already-started 200 stream).
+  Expected tool failures (`is_error: true`) bypass output-schema validation;
+  malformed result content is still rejected. Input-required form responses are
+  checked only when the tool eventually returns a completed result.
 
   Expected tool failures use the same callback shape:
 
@@ -156,6 +167,7 @@ defmodule Portico.Tool do
       env.module |> Module.get_attribute(:portico_tool_metadata) |> Map.pop!(:validator)
 
     {verifier, metadata} = Map.pop!(metadata, :elicitation_verifier)
+    {output_validator, metadata} = Map.pop(metadata, :output_validator)
 
     quote do
       @doc false
@@ -163,6 +175,9 @@ defmodule Portico.Tool do
 
       @doc false
       def __portico_validator__, do: unquote(Macro.escape(validator))
+
+      @doc false
+      def __portico_output_validator__, do: unquote(Macro.escape(output_validator))
 
       @doc false
       def __portico_verify_input__(state, request),

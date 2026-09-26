@@ -105,12 +105,27 @@ end
 `Result.structured/1` accepts any JSON value, normalizes atom map keys to strings,
 and includes a JSON text fallback alongside `structuredContent`. Invalid values
 return `{:error, :invalid_structured_content}`. Use `case` if construction errors
-need recovery; the explicit match above asserts success. Output-schema declarations
-are not supported yet. Try the example's `summarize` tool for structured results.
+need recovery; the explicit match above asserts success. Tools can declare an
+optional `output_schema:` alongside `input_schema:`:
+
+```elixir
+output_schema: %{
+  type: "object",
+  properties: %{sum: %{type: "integer"}},
+  required: ["sum"],
+  additionalProperties: false
+}
+```
+
+Portico checks the declaration at compilation, advertises it in `tools/list`, and
+validates successful structured results, including streams and form continuations.
+Missing or mismatched output returns `{:error, :invalid_output}` in test helpers
+and a sanitized internal error over HTTP. Expected `Result.error/1` failures do
+not need to match the output schema. Try the example's `summarize` tool.
 
 Only MCP **2026-07-28** is implemented. Resources, prompts, subscriptions, stdio,
 legacy protocol versions, and URL elicitation are outside the current scope.
-Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool schemas.
+Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.
 The host application owns authentication, authorization, and rate limiting.
 Passing user assigns through Plug does not provide MCP OAuth support.
 
