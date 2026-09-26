@@ -25,11 +25,17 @@ defmodule PorticoExample.Tools.ApproveReport do
     with {:ok, entry} <- ReportApprovals.get(id, request.assigns[:demo_user]) do
       case action do
         :accept ->
-          if entry.complete do
-            {:ok, result} = Portico.Result.text("Demo report approved.")
-            {:ok, result}
-          else
-            ask(id)
+          case entry.status do
+            :approved ->
+              {:ok, result} = Portico.Result.text("Demo report approved.")
+              {:ok, result}
+
+            :rejected ->
+              {:ok, content} = Portico.Result.error("Report approval rejected.")
+              {:ok, content}
+
+            :pending ->
+              ask(id)
           end
 
         action when action in [:decline, :cancel] ->

@@ -7,7 +7,7 @@ defmodule PorticoExample.ReportApprovals do
 
   def create(user) do
     id = random()
-    entry = %{user: user, complete: false, confirmation: random(), expires: now() + 300}
+    entry = %{user: user, status: :pending, confirmation: random(), expires: now() + 300}
 
     Agent.get_and_update(__MODULE__, fn entries ->
       entries = Map.reject(entries, fn {_, entry} -> entry.expires <= now() end)
@@ -30,19 +30,24 @@ defmodule PorticoExample.ReportApprovals do
     end)
   end
 
-  def complete(id, user, confirmation) do
+  def decide(id, user, confirmation, decision) when decision in [:approved, :rejected] do
     Agent.get_and_update(__MODULE__, fn entries ->
       case entries[id] do
         %{user: ^user, confirmation: ^confirmation, expires: expires} = entry ->
-          if expires > now(),
-            do: {:ok, Map.put(entries, id, %{entry | complete: true})},
-            else: {{:error, :not_found}, entries}
+          cond do
+            expires <= now() -> {{:error, :not_found}, entries}
+            entry.status == decision -> {:ok, entries}
+            entry.status == :pending -> {:ok, Map.put(entries, id, %{entry | status: decision})}
+            true -> {{:error, :already_decided}, entries}
+          end
 
         _ ->
           {{:error, :not_found}, entries}
       end
     end)
   end
+
+  def decide(_, _, _, _), do: {:error, :invalid_decision}
 
   defp random, do: Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
   defp now, do: System.monotonic_time(:second)

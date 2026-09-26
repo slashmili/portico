@@ -992,3 +992,17 @@ mcp = %{mcp |
 URL replies omit `content`. The signed URL and state retain the same server,
 resource route/URI binding and five-minute expiry as form reads. Missing URL
 support returns `:url_not_supported` in helpers and MCP `-32021`.
+
+
+### Rejecting a browser approval
+
+Both `approve_report` and `company://reviewed-report` use the same approval page.
+Choose **Reject report** to record a rejection, then return to the MCP client
+and accept/retry the pending URL request. The application reads the browser's
+decision: the tool returns an error result saying “Report approval rejected.”;
+the resource returns that status text without the report.
+
+The first browser decision is final for that approval request. Revisiting the
+page shows the recorded decision; a stale form cannot change it. Start a new
+tool call or resource read to create a new approval request. Browser rejection
+is separate from declining or cancelling the URL prompt in the MCP client.

@@ -80,7 +80,13 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
     async def test_reviewed_report_browser_completion(self):
         await self._assert_report_browser_completion(read_resource=True)
 
-    async def _assert_report_browser_completion(self, read_resource=False):
+    async def test_approve_report_browser_rejection(self):
+        await self._assert_report_browser_completion(decision="reject")
+
+    async def test_reviewed_report_browser_rejection(self):
+        await self._assert_report_browser_completion(read_resource=True, decision="reject")
+
+    async def _assert_report_browser_completion(self, read_resource=False, decision="approve"):
         seen = []
 
         async def on_url(context, params):
@@ -101,12 +107,16 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 with urllib.request.urlopen(urllib.request.Request(params.url, headers={"Authorization": alice}), timeout=5) as response:
                     html = response.read().decode()
                     self.assertEqual(response.headers["Cache-Control"], "no-store")
+                    self.assertIn('value="reject">Reject report', html)
                 token = re.search(r'name="confirmation" value="([^"]+)"', html).group(1)
                 request = urllib.request.Request(params.url,
-                    data=urllib.parse.urlencode({"confirmation": token}).encode(),
+                    data=urllib.parse.urlencode({"confirmation": token, "decision": decision}).encode(),
                     headers={"Authorization": alice, "Content-Type": "application/x-www-form-urlencoded"})
                 with urllib.request.urlopen(request, timeout=5) as response:
                     self.assertEqual(response.status, 200)
+                    self.assertIn(b"rejected" if decision == "reject" else b"approved", response.read())
+                with urllib.request.urlopen(urllib.request.Request(params.url, headers={"Authorization": alice}), timeout=5) as response:
+                    self.assertNotIn(b'<form', response.read())
             await asyncio.to_thread(browser)
             return ElicitResult(action="accept")
 
@@ -115,12 +125,12 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(endpoint, read_timeout_seconds=10, elicitation_callback=on_url) as client:
                 if read_resource:
                     result = await client.read_resource("company://reviewed-report")
-                    self.assertEqual(result.contents[0].text, "Reviewed sample report: 3 orders, total 42 EUR.")
+                    self.assertEqual(result.contents[0].text, "Report approval rejected." if decision == "reject" else "Reviewed sample report: 3 orders, total 42 EUR.")
                     self.assertEqual(str(result.contents[0].uri), "company://reviewed-report")
                 else:
                     result = await client.call_tool("approve_report", {})
-                    self.assertFalse(result.is_error)
-                    self.assertEqual(result.content[0].text, "Demo report approved.")
+                    self.assertEqual(result.is_error, decision == "reject")
+                    self.assertEqual(result.content[0].text, "Report approval rejected." if decision == "reject" else "Demo report approved.")
                 self.assertEqual(len(seen), 2)
 
     async def test_approve_report_decline_cancel(self):

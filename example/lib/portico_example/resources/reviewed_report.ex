@@ -26,13 +26,19 @@ defmodule PorticoExample.Resources.ReviewedReport do
     with {:ok, entry} <- ReportApprovals.get(id, request.assigns[:demo_user]) do
       case action do
         :accept ->
-          if entry.complete do
-            {:ok, content} =
-              Portico.Resource.text("Reviewed sample report: 3 orders, total 42 EUR.")
+          case entry.status do
+            :approved ->
+              {:ok, content} =
+                Portico.Resource.text("Reviewed sample report: 3 orders, total 42 EUR.")
 
-            {:ok, content}
-          else
-            ask(id)
+              {:ok, content}
+
+            :rejected ->
+              {:ok, content} = Portico.Resource.text("Report approval rejected.")
+              {:ok, content}
+
+            :pending ->
+              ask(id)
           end
 
         action when action in [:decline, :cancel] ->

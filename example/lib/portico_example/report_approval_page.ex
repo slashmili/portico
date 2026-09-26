@@ -42,8 +42,8 @@ defmodule PorticoExample.ReportApprovalPage do
         |> send_resp(200, """
         <!doctype html><html lang="en"><meta charset="utf-8"><title>Review demo report</title>
         <h1>Review demo report</h1><p>Signed in as #{user}. Sample report: 3 orders, total 42 EUR. This is fictional data.</p>
-        <form method="post"><input type="hidden" name="confirmation" value="#{entry.confirmation}">
-        <button type="submit">Approve report</button></form></html>
+        #{decision_form(entry)}
+        </html>
         """)
 
       {:error, _} ->
@@ -54,17 +54,33 @@ defmodule PorticoExample.ReportApprovalPage do
   defp respond(%{method: "POST"} = conn, id, user) do
     with ["application/x-www-form-urlencoded" <> _] <- get_req_header(conn, "content-type"),
          {:ok, body, conn} <- read_body(conn, length: 2_048),
-         %{"confirmation" => confirmation} <- decode(body),
-         :ok <- ReportApprovals.complete(id, user, confirmation) do
+         %{"confirmation" => confirmation, "decision" => decision} <- decode(body),
+         {:ok, status} <- decision(decision),
+         :ok <- ReportApprovals.decide(id, user, confirmation, status) do
       send_resp(
         conn,
         200,
-        "Report approved. Return to your MCP client and retry the request."
+        "Report #{status}. Return to your MCP client and retry the request."
       )
     else
       _ -> send_resp(conn, 400, "Invalid confirmation")
     end
   end
+
+  defp decision_form(%{status: :pending} = entry) do
+    """
+    <form method="post"><input type="hidden" name="confirmation" value="#{entry.confirmation}">
+    <button type="submit" name="decision" value="approve">Approve report</button>
+    <button type="submit" name="decision" value="reject">Reject report</button></form>
+    """
+  end
+
+  defp decision_form(entry),
+    do: "<p>Report #{entry.status}. Return to your MCP client and retry the request.</p>"
+
+  defp decision("approve"), do: {:ok, :approved}
+  defp decision("reject"), do: {:ok, :rejected}
+  defp decision(_), do: {:error, :invalid_decision}
 
   defp decode(body) do
     URI.decode_query(body)

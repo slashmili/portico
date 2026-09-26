@@ -19,7 +19,7 @@ defmodule PorticoExample.ReviewedReportTest do
 
     assert {:ok, ^input, _} = read_resource(mcp, "company://reviewed-report", options)
     {:ok, entry} = ReportApprovals.get(id, "alice")
-    :ok = ReportApprovals.complete(id, "alice", entry.confirmation)
+    :ok = ReportApprovals.decide(id, "alice", entry.confirmation, :approved)
 
     {:ok, content} = read_resource mcp, "company://reviewed-report", options
     assert content.text == "Reviewed sample report: 3 orders, total 42 EUR."
