@@ -1,21 +1,29 @@
 defmodule Portico.Input do
   @moduledoc """
-  A form requested by a tool with `{:ok, form, request_state}`.
+  A form or URL requested by a tool with `{:ok, input, request_state}`.
 
   `form/2` validates and normalizes a flat JSON Schema with string, number,
   integer, or boolean fields, single-choice string enums, and arrays of string
   enum choices, with optional labels for each choice. Nested objects, references,
-  and URL mode are not supported. Errors return tuples.
+  are not supported by forms. `url/2` requests a browser interaction instead.
+  Errors return tuples.
 
-  Portico protects the form and application state in an expiring signed token.
+  Portico protects the input and application state in an expiring signed token.
   Accepted answers are validated against that form before `handle_input/3` runs.
-  No state, schema, or waiting process is stored server-side between requests.
+  Portico stores no state, schema, or waiting process between requests. The host
+  application owns any browser workflow state.
   See `Portico.Elicitation` for key configuration and custom verification.
   Do not request secrets through form elicitation.
   """
-  defstruct [:message, :schema]
-  @type t :: %__MODULE__{message: String.t(), schema: map()}
-  @type answer :: {:accept, map()} | :decline | :cancel
+  defstruct [:message, :schema, :url, mode: :form]
+
+  @type t :: %__MODULE__{
+          message: String.t(),
+          schema: map() | nil,
+          url: String.t() | nil,
+          mode: :form | :url
+        }
+  @type answer :: {:accept, map()} | :accept | :decline | :cancel
 
   @doc """
   Builds a form from a message and a required `schema:` option.
@@ -43,6 +51,52 @@ defmodule Portico.Input do
       true -> build(message, options[:schema])
     end
   end
+
+  @doc """
+  Builds a URL elicitation with a required `url:` option.
+
+  Accepts absolute HTTP/HTTPS URLs without embedded credentials. HTTPS should be
+  used outside local development. Portico never fetches the URL. Invalid values
+  return error tuples. Keep secrets and personal data out of the URL.
+
+  URL replies reach `handle_input/3` as `:accept`, `:decline`, or `:cancel`.
+  Acceptance indicates consent, not completion: the application must check its
+  browser workflow and may return another URL input while it remains pending.
+  The application owns browser authentication and must bind the browser user to
+  the initiating MCP user; a signed continuation does not provide that identity.
+  """
+  @spec url(String.t(), keyword()) :: {:ok, t()} | {:error, atom()}
+  def url(message, options) do
+    cond do
+      not (is_binary(message) and String.valid?(message)) ->
+        {:error, :invalid_message}
+
+      not Keyword.keyword?(options) ->
+        {:error, :invalid_options}
+
+      Keyword.keys(options) != [:url] ->
+        {:error, :invalid_options}
+
+      valid_url?(options[:url]) ->
+        {:ok, %__MODULE__{mode: :url, message: message, url: options[:url]}}
+
+      true ->
+        {:error, :invalid_url}
+    end
+  end
+
+  defp valid_url?(url) when is_binary(url) do
+    with true <- String.valid?(url),
+         false <- Regex.match?(~r/[\x00-\x20\x7f\\]|%(?![0-9a-fA-F]{2})/u, url),
+         {:ok, uri} <- URI.new(url) do
+      uri.scheme in ["http", "https"] and is_binary(uri.host) and uri.host != "" and
+        is_nil(uri.userinfo) and is_integer(uri.port) and uri.port in 1..65535
+    else
+      _ -> false
+    end
+  end
+
+  defp valid_url?(_url), do: false
 
   defp build(message, schema) when is_map(schema) and not is_struct(schema) do
     {schema, _validator} = Portico.Schema.build!(schema, __ENV__)

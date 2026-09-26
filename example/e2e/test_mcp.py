@@ -1,6 +1,9 @@
 """Real HTTP checks with an owned Elixir server, or an explicit MCP_URL."""
 
 import asyncio
+import base64
+import re
+import urllib.parse
 import os
 from pathlib import Path
 import signal
@@ -71,6 +74,68 @@ def setUpModule():
 
 
 class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
+    async def test_approve_report_browser_completion(self):
+        seen = []
+
+        async def on_url(context, params):
+            self.assertEqual(params.mode, "url")
+            self.assertEqual(urllib.parse.urlsplit(params.url).netloc, urllib.parse.urlsplit(URL).netloc)
+            seen.append(params.url)
+            if len(seen) == 1:
+                return ElicitResult(action="accept")  # Consent is not completion.
+            self.assertEqual(seen, [params.url, params.url])
+
+            def browser():
+                alice = "Basic " + base64.b64encode(b"alice:alice-demo").decode()
+                bob = "Basic " + base64.b64encode(b"bob:bob-demo").decode()
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(urllib.request.Request(params.url, headers={"Authorization": bob}), timeout=5)
+                self.assertEqual(denied.exception.code, 404)
+                denied.exception.close()
+                with urllib.request.urlopen(urllib.request.Request(params.url, headers={"Authorization": alice}), timeout=5) as response:
+                    html = response.read().decode()
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+                token = re.search(r'name="confirmation" value="([^"]+)"', html).group(1)
+                request = urllib.request.Request(params.url,
+                    data=urllib.parse.urlencode({"confirmation": token}).encode(),
+                    headers={"Authorization": alice, "Content-Type": "application/x-www-form-urlencoded"})
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertEqual(response.status, 200)
+            await asyncio.to_thread(browser)
+            return ElicitResult(action="accept")
+
+        endpoint = URL.replace("://", "://alice:alice-demo@", 1)
+        async with asyncio.timeout(15):
+            async with Client(endpoint, read_timeout_seconds=10, elicitation_callback=on_url) as client:
+                result = await client.call_tool("approve_report", {})
+                self.assertFalse(result.is_error)
+                self.assertEqual(result.content[0].text, "Demo report approved.")
+                self.assertEqual(len(seen), 2)
+
+    async def test_approve_report_decline_cancel(self):
+        for action, expected in [("decline", "declined"), ("cancel", "cancelled")]:
+            async def on_url(context, params):
+                self.assertEqual(params.mode, "url")
+                return ElicitResult(action=action)
+            endpoint = URL.replace("://", "://alice:alice-demo@", 1)
+            async with asyncio.timeout(15):
+                async with Client(endpoint, read_timeout_seconds=10, elicitation_callback=on_url) as client:
+                    result = await client.call_tool("approve_report", {})
+                    self.assertTrue(result.is_error)
+                    self.assertEqual(result.content[0].text, f"Report approval {expected}.")
+
+    async def test_approve_report_requires_demo_identity_and_url_capability(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                result = await client.call_tool("approve_report", {})
+                self.assertTrue(result.is_error)
+            endpoint = URL.replace("://", "://alice:alice-demo@", 1)
+            async with Client(endpoint, read_timeout_seconds=10) as client:
+                with self.assertRaises(MCPError) as caught:
+                    await client.call_tool("approve_report", {})
+                self.assertEqual(caught.exception.error.code, -32021)
+                self.assertEqual(caught.exception.error.data, {"requiredCapabilities": {"elicitation": {"url": {}}}})
+
     async def test_discovery(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
@@ -88,7 +153,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add", "choose_color", "choose_colors", "count", "greet", "summarize"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "approve_report", "choose_color", "choose_colors", "count", "greet", "summarize"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)

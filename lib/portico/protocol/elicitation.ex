@@ -2,7 +2,9 @@ defmodule Portico.Protocol.Elicitation do
   @moduledoc false
   alias Portico.Input
 
-  def supported?(request) do
+  def supported?(request, mode \\ :form)
+
+  def supported?(request, :form) do
     case request.client_capabilities["elicitation"] do
       value when is_map(value) and map_size(value) == 0 -> true
       %{"form" => form} when is_map(form) -> true
@@ -10,36 +12,52 @@ defmodule Portico.Protocol.Elicitation do
     end
   end
 
-  def encode(%Input{} = form, state, request) do
-    with {:ok, form} <- Input.form(form.message, schema: form.schema) do
-      cond do
-        not string?(state) ->
-          {:error, :invalid_request_state}
-
-        not supported?(request) ->
-          {:error, :form_not_supported}
-
-        true ->
-          with {:ok, token} <- Portico.Elicitation.seal(form, state, request) do
-            {:ok, form,
-             %{
-               "resultType" => "input_required",
-               "requestState" => token,
-               "inputRequests" => %{
-                 "form" => %{
-                   "method" => "elicitation/create",
-                   "params" => %{
-                     "mode" => "form",
-                     "message" => form.message,
-                     "requestedSchema" => form.schema
-                   }
-                 }
-               }
-             }}
-          end
-      end
+  def supported?(request, :url) do
+    case request.client_capabilities["elicitation"] do
+      %{"url" => url} when is_map(url) -> true
+      _ -> false
     end
   end
+
+  def require_support(request, mode) do
+    if supported?(request, mode),
+      do: :ok,
+      else: {:input_error, if(mode == :url, do: :url_not_supported, else: :form_not_supported)}
+  end
+
+  def encode(%Input{} = input, state, request) do
+    with {:ok, input} <- validate_input(input),
+         true <- string?(state),
+         :ok <- require_support(request, input.mode),
+         {:ok, token} <- Portico.Elicitation.seal(input, state, request) do
+      mode = Atom.to_string(input.mode)
+      params = %{"mode" => mode, "message" => input.message}
+
+      params =
+        if input.mode == :url,
+          do: Map.put(params, "url", input.url),
+          else: Map.put(params, "requestedSchema", input.schema)
+
+      {:ok, input,
+       %{
+         "resultType" => "input_required",
+         "requestState" => token,
+         "inputRequests" => %{mode => %{"method" => "elicitation/create", "params" => params}}
+       }}
+    else
+      false -> {:error, :invalid_request_state}
+      {:input_error, reason} -> {:error, reason}
+      error -> error
+    end
+  end
+
+  defp validate_input(%Input{mode: :form, url: nil} = input),
+    do: Input.form(input.message, schema: input.schema)
+
+  defp validate_input(%Input{mode: :url, schema: nil} = input),
+    do: Input.url(input.message, url: input.url)
+
+  defp validate_input(_input), do: {:error, :invalid_input}
 
   def retry(params) do
     case {Map.fetch(params, "requestState"), Map.fetch(params, "inputResponses")} do
@@ -58,14 +76,37 @@ defmodule Portico.Protocol.Elicitation do
 
   defp answer({:ok, responses}, state) do
     if object?(responses) do
-      case Map.fetch(responses, "form") do
-        :error -> {:resume, :missing, state}
-        {:ok, reply} -> decode(reply, state)
+      case {Map.fetch(responses, "form"), Map.fetch(responses, "url")} do
+        {{:ok, _}, {:ok, _}} -> {:error, :invalid_params}
+        {{:ok, reply}, :error} -> decode(reply, state)
+        {:error, {:ok, reply}} -> decode_url(reply, state)
+        {:error, :error} -> {:resume, :missing, state}
       end
     else
       {:error, :invalid_params}
     end
   end
+
+  defp decode_url(%{"action" => action} = reply, state) do
+    if object?(reply) and not Map.has_key?(reply, "content") do
+      case action do
+        "accept" -> {:resume, {:url, :accept}, state}
+        "decline" -> {:resume, {:url, :decline}, state}
+        "cancel" -> {:resume, {:url, :cancel}, state}
+        _ -> {:error, :invalid_params}
+      end
+    else
+      {:error, :invalid_params}
+    end
+  end
+
+  defp decode_url(_, _), do: {:error, :invalid_params}
+
+  def match_answer(:missing, _input), do: {:ok, :missing}
+  def match_answer({:url, action}, %Input{mode: :url}), do: {:ok, action}
+  def match_answer({:url, _}, _input), do: {:input_error, :invalid_params}
+  def match_answer(_answer, %Input{mode: :url}), do: {:input_error, :invalid_params}
+  def match_answer(answer, %Input{mode: :form}), do: {:ok, answer}
 
   defp decode(%{"action" => action} = reply, state) do
     content = Map.get(reply, "content", %{})

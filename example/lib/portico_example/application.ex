@@ -16,6 +16,9 @@ defmodule PorticoExample.Application do
         []
       end
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: PorticoExample.Supervisor)
+    Supervisor.start_link([PorticoExample.ReportApprovals | children],
+      strategy: :one_for_one,
+      name: PorticoExample.Supervisor
+    )
   end
 end

@@ -6,7 +6,7 @@ defmodule Portico.Elicitation do
 
       config :portico, MyApp.MCP, elicitation_key: System.fetch_env!("ELICITATION_KEY")
 
-  Continuations expire after five minutes and bind the form and application state
+  Continuations expire after five minutes and bind the form or URL and application state
   to the server, tool, and original arguments. They are signed, not encrypted or
   single-use. Keep secrets out of state. Changing the key invalidates existing
   tokens; instances sharing a key can resume each other's tokens.
@@ -14,7 +14,7 @@ defmodule Portico.Elicitation do
   A tool may set `elicitation_verifier: &MyApp.Elicitation.verify/2`. The function
   receives the wire token and fresh request and returns `{:ok, application_state}`
   or `{:error, reason}`. It can call `Portico.Elicitation.verify/2` then enforce
-  identity or application policy. Portico always checks the signed form envelope
+  identity or application policy. Portico always checks the signed input envelope
   independently before validating answers, even with a custom verifier.
 
   There is no automatic user authentication. Applications bind state to their

@@ -82,6 +82,17 @@ defmodule Portico.Tool do
   failures instead. Reasons may be any Elixir term; avoid secrets in reasons
   because they appear in server logs.
 
+  For URL elicitation, build `Portico.Input.url(message, url: url)` and return
+  `{:ok, input, application_state}`. URL replies reach `handle_input/3` as
+  `:accept`, `:decline`, or `:cancel`, with no content. Acceptance is consent,
+  not completion: the application checks its browser workflow and may return
+  another input while pending. The application owns storage and browser identity
+  checks; never treat a signed continuation as authentication. URL elicitation
+  requires the client's `elicitation.url` capability. Missing support returns
+  `{:error, :url_not_supported}` in tests and protocol error `-32021` over HTTP.
+  URL inputs also work from streaming callbacks and use the same signing key,
+  expiry, and optional verifier as forms. See `Portico.Input.url/2`.
+
   For form elicitation, return `{:ok, form, application_state}` from `call/2`
   and implement `handle_input/3`. Build the form with `Portico.Input.form/2`.
   If the client lacks form support, Portico returns protocol error `-32021`
@@ -137,7 +148,7 @@ defmodule Portico.Tool do
   @doc "Runs request-scoped streaming work and returns the final result."
   @callback handle_stream(term(), Portico.Stream.t()) ::
               {:ok, Portico.Result.t()} | {:ok, Portico.Input.t(), String.t()} | {:error, term()}
-  @doc "Handles a validated form reply and state returned by the elicitation verifier."
+  @doc "Handles a validated elicitation reply and state returned by the elicitation verifier."
   @callback handle_input(Portico.Input.answer(), term(), Portico.Request.t()) ::
               {:ok, Portico.Result.t()}
               | {:ok, Portico.Input.t(), String.t()}

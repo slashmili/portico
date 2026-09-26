@@ -64,7 +64,8 @@ ALLOWED_ORIGINS=http://localhost:6274 mix run --no-halt
 
 Use the Origin your client actually sends; the value above is just an example.
 This configures request validation, not browser CORS handling. The example has
-no authentication or CORS preflight support.
+no MCP OAuth or CORS preflight support. The `approve_report` showcase uses fixed
+local demo logins solely to demonstrate binding browser completion to an MCP caller.
 
 ## Structured results
 
@@ -401,7 +402,7 @@ responsibilities; the custom verifier can enforce identity using fresh assigns.
 
 Form elicitation supports one form at a time with flat string, number, integer,
 and boolean fields. Single-choice string enums are also supported. Arrays of string enum choices support multiple selection, with optional labels.
-URL forms and multiple simultaneous forms are not implemented. String `format` remains an annotation, as with
+URL elicitation is described below. Multiple simultaneous inputs are not implemented. String `format` remains an annotation, as with
 tool schemas. Clients without form capability receive JSON-RPC error `-32021`
 (`Missing required client capability`); see the HTTP and streaming behavior below.
 
@@ -558,3 +559,89 @@ are objects; sampling's optional `context` and `tools` fields are objects too.
 require a prefix, such as `com.example/feature`; experimental names are opaque.
 Unknown capabilities and settings are preserved. Valid declarations do not enable
 sampling, roots, or extensions in Portico; malformed shapes return HTTP 400 / -32602.
+
+
+## URL elicitation: approve a report in the browser
+
+The separate `approve_report` tool asks you to review fictional report data on a
+browser page and approve it. This demonstrates a browser step in a tool workflow.
+The application owns a small supervised store of pending approvals (five-minute
+expiry, bounded to 1,000 entries, reset when the application stops). Portico itself
+uses signed, stateless continuation tokens.
+
+### Try it with MCP Inspector
+
+Start the example as described above, then launch Inspector in another terminal:
+
+```sh
+npx @modelcontextprotocol/inspector \
+  --server-url http://127.0.0.1:4000/mcp \
+  --transport http \
+  --protocol-era modern \
+  --header "Authorization: Basic YWxpY2U6YWxpY2UtZGVtbw=="
+```
+
+The header authenticates MCP requests as the fixed local demo user **alice**
+(password **alice-demo**). It is Basic auth supplied by the example, not MCP
+OAuth. The example also accepts **bob / bob-demo** to demonstrate that another
+user cannot approve Alice's report. These public credentials are for local tests.
+
+If Inspector is already running, add the custom header `Authorization` with value
+`Basic YWxpY2U6YWxpY2UtZGVtbw==` to the server settings and reconnect. Include the
+`Basic ` prefix; do not use a Bearer token field. Use Streamable HTTP and the modern
+protocol era. See the [Inspector configuration guide](https://github.com/modelcontextprotocol/inspector/blob/main/docs/mcp-server-configuration.md).
+
+1. Connect to the example in Inspector and call `approve_report` with `{}`.
+2. Open the elicitation URL. When the browser asks for credentials, sign in as
+   **alice / alice-demo**, matching the MCP caller. The MCP header is not forwarded
+   to this browser page; it authenticates separately.
+3. Review the sample report and click **Approve report**.
+4. Return to Inspector and resume/retry the pending request. The result should
+   say **Demo report approved.**
+
+Consent in Inspector means permission to open the browser interaction. Until the
+browser POST records approval, retries return the same URL with a fresh signed
+continuation. A different demo user cannot view or approve the report. Approval
+needs the hidden confirmation token supplied by the authenticated page; a GET
+alone never approves anything. Requests without demo authentication get a tool
+error; other example tools remain callable as before.
+
+The tool uses the same callback contract:
+
+```elixir
+{:ok, input} = Portico.Input.url("Review the report", url: report_url)
+{:ok, input, application_state}
+```
+
+`handle_input/3` receives `:accept`, `:decline`, or `:cancel`. Its application-state
+argument comes from the existing signed continuation verifier. URL answers omit
+`content`; direct Elixir tests use:
+
+```elixir
+mcp = %{mcp | client_capabilities: %{"elicitation" => %{"url" => %{}}},
+              assigns: %{demo_user: "alice"}}
+{:ok, input, state} = call_tool mcp, "approve_report", %{}
+{:ok, pending_input, _state} = call_tool mcp, "approve_report", %{},
+  request_state: state,
+  input_responses: %{"url" => %{"action" => "accept"}}
+```
+
+Missing URL capability yields JSON-RPC `-32021` with
+`requiredCapabilities: {"elicitation": {"url": {}}}`. Empty elicitation capability
+only supports forms. The helper returns `{:error, :url_not_supported}`. HTTP uses
+400, or a final error within an already-started 200 SSE response.
+
+Portico accepts absolute HTTP/HTTPS URLs without embedded credentials and never
+fetches them. Use HTTPS outside local development. Applications must keep secrets
+and personal information out of URLs, verify the browser identity against the MCP
+caller, and manage completion storage. Do not use a URL as a pre-authenticated
+entry to a protected resource. Signed requestState does not authenticate a user.
+
+MCP OAuth support is on the TODO list and is not implemented. It will address
+client authorization to the MCP server; the browser step shown here is a separate
+application workflow. Production authentication cannot use these fixed demo logins.
+
+Python E2E tests simulate the separate browser GET/POST, check that consent alone
+stays pending, reject a different browser user, and test approval, decline,
+cancel, missing identity, and missing URL capability. Library tests also cover
+streamed URL inputs, malformed replies, mode substitution and token binding.

@@ -122,6 +122,13 @@ defmodule Portico.Test do
   completion. `timeout:` bounds streaming work (default 5,000 milliseconds);
   expiry stops the task and returns `{:error, :timeout}`.
 
+  URL calls return `{:ok, %Portico.Input{mode: :url}, signed_state}`. Declare
+  `%{"elicitation" => %{"url" => %{}}}` in client capabilities and retry with
+  `request_state: signed_state, input_responses: %{"url" => %{"action" => "accept"}}`.
+  URL replies must omit `content`. Missing URL support returns
+  `{:error, :url_not_supported}`. A retry may return another input if the browser
+  workflow is still pending; application code owns checking completion.
+
   Form calls, including forms returned after streamed progress, return
   `{:ok, %Portico.Input{}, wire_state}`. To submit a reply,
   call the same tool and arguments with `request_state: wire_state` and

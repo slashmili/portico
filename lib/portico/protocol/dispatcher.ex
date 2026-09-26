@@ -128,8 +128,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
-      {:input_error, :form_not_supported} ->
-        {:reply, Error.response(:form_not_supported, request.id)}
+      {:input_error, reason} when reason in [:form_not_supported, :url_not_supported] ->
+        {:reply, Error.response(reason, request.id)}
 
       {:input_error, _reason} ->
         {:reply, Error.response(:invalid_params, request.id)}
@@ -180,8 +180,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, form, fields} ->
         {:input, form, fields["requestState"], fields}
 
-      {:error, :form_not_supported} ->
-        {:input_error, :form_not_supported}
+      {:error, reason} when reason in [:form_not_supported, :url_not_supported] ->
+        {:input_error, reason}
 
       error ->
         error
@@ -300,21 +300,18 @@ defmodule Portico.Protocol.Dispatcher do
   defp run_callback(module, arguments, request, :initial), do: module.call(arguments, request)
 
   defp run_callback(module, _arguments, request, {:resume, answer, state}) do
-    cond do
-      not Elicitation.supported?(request) ->
-        {:input_error, :form_not_supported}
-
-      not function_exported?(module, :handle_input, 3) ->
-        {:error, :missing_input_callback}
-
-      true ->
-        with {:ok, envelope} <- open_input(state, request),
-             {:ok, verified_state} <- verify_input(module, state, request) do
-          case validate_answer(answer, envelope.form) do
-            :ok -> module.handle_input(answer, verified_state, request)
-            :retry -> {:ok, envelope.form, envelope.state}
-          end
+    if not function_exported?(module, :handle_input, 3) do
+      {:error, :missing_input_callback}
+    else
+      with {:ok, envelope} <- open_input(state, request),
+           :ok <- Elicitation.require_support(request, envelope.form.mode),
+           {:ok, answer} <- Elicitation.match_answer(answer, envelope.form),
+           {:ok, verified_state} <- verify_input(module, state, request) do
+        case validate_answer(answer, envelope.form) do
+          :ok -> module.handle_input(answer, verified_state, request)
+          :retry -> {:ok, envelope.form, envelope.state}
         end
+      end
     end
   end
 

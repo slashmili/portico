@@ -91,7 +91,8 @@ Schema declarations are checked at compile time against Draft 2020-12, and
 arguments are validated before callbacks run. Tools can choose JSON replies or
 request-scoped progress streams with `{:noreply, data, :stream}` and
 `handle_stream/2`. Form elicitation supports signed continuation state, validated
-replies, and single or multiple choices.
+replies, and single or multiple choices. URL elicitation supports browser workflows with
+application-owned completion and identity checks.
 
 Return structured JSON using the same callback contract:
 
@@ -124,7 +125,7 @@ and a sanitized internal error over HTTP. Expected `Result.error/1` failures do
 not need to match the output schema. Try the example's `summarize` tool.
 
 Only MCP **2026-07-28** is implemented. Resources, prompts, subscriptions, stdio,
-legacy protocol versions, and URL elicitation are outside the current scope.
+and legacy protocol versions are outside the current scope.
 Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.
 The host application owns authentication, authorization, and rate limiting.
 Passing user assigns through Plug does not provide MCP OAuth support.
