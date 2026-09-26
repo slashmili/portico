@@ -1,6 +1,6 @@
 defmodule Portico.Server do
   @moduledoc """
-  Declares a server's identity and routes exposed tool names to tool modules.
+  Declares a server's identity, tool routes, and static resource routes.
 
       defmodule MyApp.MCP do
         use Portico.Server, name: "my-app", version: "1.0.0"
@@ -8,7 +8,7 @@ defmodule Portico.Server do
         tool "add", MyApp.MCP.Tools.Add
       end
 
-  Inspect declarations with `info/1` and `tools/1`. Names are case-sensitive;
+  Inspect declarations with `info/1`, `tools/1`, and `resources/1`. Names are case-sensitive;
   duplicate tool names and malformed declarations raise compile-time errors.
   Server names and versions must be nonempty UTF-8 strings. Versions do not
   have to follow semantic versioning.
@@ -17,6 +17,8 @@ defmodule Portico.Server do
   Invoke tools with `Portico.Test.call_tool/4`. The protocol dispatcher supports
   discovery, listing, and completed tool calls through `Portico.Plug`. Schema
   declarations are checked at compilation and arguments before tool execution.
+  Resource modules use `Portico.Resource`; declare them with `resource/2` and
+  test reads with `Portico.Test.read_resource/3`.
   """
 
   alias Portico.Server.Compiler
@@ -33,8 +35,9 @@ defmodule Portico.Server do
   defmacro __using__(options) do
     quote do
       Module.register_attribute(__MODULE__, :portico_tools, accumulate: true)
+      Module.register_attribute(__MODULE__, :portico_resources, accumulate: true)
       @portico_info Compiler.info!(unquote(options), __ENV__)
-      import Portico.Server, only: [tool: 2]
+      import Portico.Server, only: [tool: 2, resource: 2]
       @before_compile Portico.Server
     end
   end
@@ -51,6 +54,13 @@ defmodule Portico.Server do
     end
   end
 
+  @doc "Routes a static absolute URI to a module using Portico.Resource."
+  defmacro resource(uri, module) do
+    quote do
+      @portico_resources {Compiler.resource!(unquote(uri), unquote(module), __ENV__), __ENV__}
+    end
+  end
+
   @doc false
   defmacro __before_compile__(env) do
     info = Module.get_attribute(env.module, :portico_info)
@@ -61,10 +71,17 @@ defmodule Portico.Server do
       |> Enum.reverse()
       |> Compiler.catalog!()
 
+    resources =
+      env.module
+      |> Module.get_attribute(:portico_resources)
+      |> Enum.reverse()
+      |> Compiler.resource_catalog!()
+
     quote do
       @doc false
       def __portico__(:info), do: unquote(Macro.escape(info))
       def __portico__(:tools), do: unquote(Macro.escape(tools))
+      def __portico__(:resources), do: unquote(Macro.escape(resources))
     end
   end
 
@@ -81,4 +98,7 @@ defmodule Portico.Server do
   """
   @spec tools(module()) :: [tool_definition()]
   def tools(server), do: server.__portico__(:tools)
+  @doc "Returns static resource declarations sorted by URI, including their modules."
+  @spec resources(module()) :: [map()]
+  def resources(server), do: server.__portico__(:resources)
 end

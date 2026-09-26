@@ -3,7 +3,7 @@ defmodule Portico.Protocol.Dispatcher do
   require Logger
 
   alias Portico.{Input, Request, Result, Schema, Server}
-  alias Portico.Protocol.{Elicitation, Encoder, Error, Validation}
+  alias Portico.Protocol.{Elicitation, Encoder, Error, Resources, Validation}
 
   @supported_versions ["2026-07-28"]
 
@@ -17,9 +17,10 @@ defmodule Portico.Protocol.Dispatcher do
   are ignored; no notification handlers are implemented yet.
 
   Checks the protocol version on every request before method lookup. Currently
-  `server/discover`, `tools/list`, and `tools/call` are implemented, including
+  `server/discover`, tool listing/calling, and static text resource listing/reading
+  are implemented, including
   text and structured results, form elicitation, and request-scoped streaming.
-  Discovery advertises basic tools support. Listing returns the whole
+  Discovery advertises basic tools support and resources when declared. Listing returns the whole
   static catalog in name order and issues no pagination cursors. Discovery and
   listing use private cache scope with zero TTL (immediately stale). Known client
   metadata is validated; trace-context extraction and propagation are deferred.
@@ -56,6 +57,27 @@ defmodule Portico.Protocol.Dispatcher do
         {:error, :invalid_request}
 
       {:error, _reason} = error ->
+        error
+    end
+  end
+
+  @doc false
+  def read_resource_request(server, message, assigns) do
+    case prepare(message, assigns) do
+      {:ok, %{"method" => "resources/read", "params" => params}, context} ->
+        case Resources.read(server, params, context) do
+          {:ok, content, _fields} -> {:ok, content}
+          {:callback_error, reason} -> {:error, reason}
+          error -> error
+        end
+
+      {:ok, _, _} ->
+        {:error, :method_not_found}
+
+      :no_response ->
+        {:error, :invalid_request}
+
+      error ->
         error
     end
   end
@@ -98,7 +120,11 @@ defmodule Portico.Protocol.Dispatcher do
       "supportedVersions" => @supported_versions,
       "cacheScope" => "private",
       "ttlMs" => 0,
-      "capabilities" => %{"tools" => %{}}
+      "capabilities" =>
+        if(Server.resources(server) == [],
+          do: %{"tools" => %{}},
+          else: %{"tools" => %{}, "resources" => %{}}
+        )
     })
   end
 
@@ -119,8 +145,41 @@ defmodule Portico.Protocol.Dispatcher do
     invoke(server, params, context)
   end
 
+  defp dispatch_method(server, %{"method" => method, "params" => params, "id" => id}, _context)
+       when method in ["resources/list", "resources/templates/list"] do
+    if Map.has_key?(params, "cursor") do
+      {:reply, Error.response(:invalid_params, id)}
+    else
+      {key, items} =
+        if method == "resources/list",
+          do: {"resources", Enum.map(Server.resources(server), &Resources.metadata/1)},
+          else: {"resourceTemplates", []}
+
+      complete(server, id, %{key => items, "cacheScope" => "private", "ttlMs" => 0})
+    end
+  end
+
+  defp dispatch_method(server, %{"method" => "resources/read", "params" => params}, context) do
+    read_resource(server, params, context)
+  end
+
   defp dispatch_method(_server, request, _context) do
     {:reply, Error.response(:method_not_found, request["id"])}
+  end
+
+  defp read_resource(server, params, context) do
+    case Resources.read(server, params, context) do
+      {:ok, _content, fields} ->
+        complete(server, context.id, fields)
+
+      {:error, reason} when reason in [:invalid_params, :resource_not_found] ->
+        {:reply, Error.response(:invalid_params, context.id)}
+
+      _ ->
+        {:reply, Error.response(:internal_error, context.id)}
+    end
+  rescue
+    _ -> {:reply, Error.response(:internal_error, context.id)}
   end
 
   defp invoke(server, params, request) do

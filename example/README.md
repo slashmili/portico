@@ -645,3 +645,61 @@ Python E2E tests simulate the separate browser GET/POST, check that consent alon
 stays pending, reject a different browser user, and test approval, decline,
 cancel, missing identity, and missing URL capability. Library tests also cover
 streamed URL inputs, malformed replies, mode substitution and token binding.
+
+
+## Static text resources
+
+The example exposes `company://handbook` as a resource. In Inspector, connect as
+usual, open **Resources**, list the available resources and read the handbook.
+This does not require the report-approval demo credentials.
+
+The server declares a route alongside its tools:
+
+```elixir
+resource "company://handbook", PorticoExample.Resources.Handbook
+```
+
+The resource module owns metadata and its callback:
+
+```elixir
+defmodule PorticoExample.Resources.Handbook do
+  use Portico.Resource,
+    name: "handbook",
+    description: "A sample company handbook.",
+    mime_type: "text/plain"
+
+  @impl true
+  def read(_request) do
+    {:ok, content} = Portico.Resource.text("Welcome to the company. Ask questions and share what you learn.")
+    {:ok, content}
+  end
+end
+```
+
+The read callback receives a fresh `Portico.Request`, with `resource_uri`, server,
+client metadata and assigns. A URI routes to a declaration: it does not trigger an
+automatic filesystem read or HTTP fetch. Callbacks own data retrieval and access
+checks. Listings are static; they do not filter resources by user identity.
+
+Test the same route without an HTTP listener:
+
+```elixir
+{:ok, content} = read_resource mcp, "company://handbook"
+assert content.uri == "company://handbook"
+assert content.mime_type == "text/plain"
+assert content.text == "Welcome to the company. Ask questions and share what you learn."
+```
+
+The helper also accepts a server module and an optional `assigns:` override.
+It returns `{:error, :resource_not_found}` for undeclared URIs, preserves callback
+error reasons and lets application exceptions surface in tests. HTTP returns
+`-32602` for invalid parameters or unknown resources and sanitized `-32603` for
+callback failures. Constructors and invalid helper inputs return error tuples;
+invalid declarations fail at compilation.
+
+This slice returns one UTF-8 text item per read. Portico supplies its URI and
+optional MIME type from the declaration. Resources are listed in URI order;
+listing and reading use private caching with zero TTL. There is no pagination;
+cursors are rejected. `resources/templates/list` returns an empty list. URI
+templates, binary content, subscriptions and elicitation during reads remain
+future slices. Python E2E checks the catalog, text content and missing URI error.

@@ -12,6 +12,8 @@ Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
   schemas checked at compilation and enforced on successful completed results.
 - Request-scoped progress streaming and form/URL elicitation with signed continuation
   state, response validation, and optional application verification.
+- Static text resource declarations, discovery, listing, and reading with
+  request assigns and direct test helpers.
 - ExUnit helpers and a standalone example tested with the official Python MCP
   client over HTTP.
 

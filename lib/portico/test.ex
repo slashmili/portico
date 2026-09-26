@@ -167,6 +167,59 @@ defmodule Portico.Test do
 
   def call_tool(_target, _name, _arguments, _options), do: {:error, :invalid_target}
 
+  @doc """
+  Reads one declared static resource through protocol validation without HTTP.
+
+      {:ok, content} = read_resource mcp, "company://handbook"
+      assert content.text == "Welcome to the company."
+
+  Accepts a server module or test context and an optional `assigns:` override.
+  Returns `{:ok, %Portico.Resource{}}` with URI/MIME type filled from the route,
+  or `{:error, reason}`. Callback exceptions remain visible in tests.
+  """
+  @spec read_resource(module() | Context.t(), String.t(), keyword()) ::
+          {:ok, Portico.Resource.t()} | {:error, term()}
+  def read_resource(target, uri, options \\ [])
+
+  def read_resource(%Context{} = context, uri, options) do
+    with true <- Keyword.keyword?(options) and Enum.all?(Keyword.keys(options), &(&1 == :assigns)),
+         :ok <- validate_server(context.server),
+         :ok <- validate_assigns(context.assigns),
+         assigns = Keyword.get(options, :assigns, %{}),
+         :ok <- validate_assigns(assigns) do
+      metadata = %{
+        "io.modelcontextprotocol/protocolVersion" => context.protocol_version,
+        "io.modelcontextprotocol/clientCapabilities" => context.client_capabilities
+      }
+
+      metadata =
+        if is_nil(context.client_info),
+          do: metadata,
+          else: Map.put(metadata, "io.modelcontextprotocol/clientInfo", context.client_info)
+
+      message = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "resources/read",
+        "params" => %{"uri" => uri, "_meta" => metadata}
+      }
+
+      Dispatcher.read_resource_request(
+        context.server,
+        message,
+        Map.merge(context.assigns, assigns)
+      )
+    else
+      false -> {:error, :invalid_options}
+      error -> error
+    end
+  end
+
+  def read_resource(server, uri, options) when is_atom(server),
+    do: read_resource(%Context{server: server}, uri, options)
+
+  def read_resource(_, _, _), do: {:error, :invalid_target}
+
   defp invoke(context, name, arguments, options) do
     metadata = %{
       "io.modelcontextprotocol/protocolVersion" => context.protocol_version,

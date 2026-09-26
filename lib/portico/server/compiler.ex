@@ -101,6 +101,44 @@ defmodule Portico.Server.Compiler do
     |> Enum.sort_by(& &1.name)
   end
 
+  def resource_metadata!(options, env) do
+    options!(options, [:name, :description, :mime_type], "resource", env)
+    nonempty_string!(options[:name], "resource name", env)
+
+    for {key, value} <- options do
+      unless is_binary(value) and String.valid?(value),
+        do: error!(env, "expected resource #{inspect(key)} to be a UTF-8 string")
+    end
+
+    Map.new(options)
+  end
+
+  def resource!(uri, module, env) do
+    unless Portico.Resource.valid_uri?(uri),
+      do: error!(env, "expected resource URI to be an absolute URI without template variables")
+
+    unless is_atom(module) and module not in [nil, true, false] and
+             Code.ensure_compiled(module) == {:module, module} and
+             function_exported?(module, :__portico_resource__, 0) and
+             function_exported?(module, :read, 1),
+           do: error!(env, "expected a Portico.Resource module")
+
+    module
+    |> Macro.compile_apply(:__portico_resource__, [], env)
+    |> Map.merge(%{uri: uri, module: module})
+  end
+
+  def resource_catalog!(declarations) do
+    Enum.reduce(declarations, MapSet.new(), fn {resource, env}, uris ->
+      if MapSet.member?(uris, resource.uri),
+        do: error!(env, "duplicate resource URI #{inspect(resource.uri)}")
+
+      MapSet.put(uris, resource.uri)
+    end)
+
+    declarations |> Enum.map(fn {resource, _} -> resource end) |> Enum.sort_by(& &1.uri)
+  end
+
   defp options!(options, allowed, kind, env) do
     unless Keyword.keyword?(options) do
       error!(env, "expected #{kind} options to be a keyword list")

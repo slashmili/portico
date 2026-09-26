@@ -1,6 +1,6 @@
 defmodule Portico.Test.Context do
   @moduledoc """
-  Configuration for direct tool tests, supplied as `:mcp` by `use Portico.Test`.
+  Configuration for direct tool and resource tests, supplied as `:mcp` by `use Portico.Test`.
 
   Holds the server module, default application assigns, and client metadata.
   Override `protocol_version`, `client_info`, or `client_capabilities` in setup

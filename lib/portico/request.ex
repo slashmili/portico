@@ -11,7 +11,8 @@ defmodule Portico.Request do
   and capabilities describe the caller's claims, not authenticated identity.
 
   Tool execution also fills `server`, `tool_name`, and `arguments`. These identify
-  the operation when checking elicitation continuations.
+  the operation when checking elicitation continuations. Resource reads fill
+  `server` and `resource_uri` instead; tool fields remain unset.
 
   This struct does not authenticate its contents. The host application is
   responsible for establishing identity before assigning it to a request.
@@ -20,6 +21,7 @@ defmodule Portico.Request do
   defstruct [
     :server,
     :tool_name,
+    :resource_uri,
     :arguments,
     :id,
     :method,
@@ -33,6 +35,7 @@ defmodule Portico.Request do
   @type t :: %__MODULE__{
           server: module() | nil,
           tool_name: String.t() | nil,
+          resource_uri: String.t() | nil,
           arguments: map() | nil,
           id: String.t() | integer() | nil,
           method: String.t() | nil,

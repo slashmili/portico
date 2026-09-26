@@ -136,6 +136,31 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.error.code, -32021)
                 self.assertEqual(caught.exception.error.data, {"requiredCapabilities": {"elicitation": {"url": {}}}})
 
+    async def test_resources(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                self.assertIsNotNone(client.server_capabilities.resources)
+                listing = await client.list_resources()
+                self.assertEqual(len(listing.resources), 1)
+                resource = listing.resources[0]
+                self.assertEqual(str(resource.uri), "company://handbook")
+                self.assertEqual(resource.name, "handbook")
+                self.assertEqual(resource.description, "A sample company handbook.")
+                self.assertEqual(resource.mime_type, "text/plain")
+                self.assertEqual((listing.cache_scope, listing.ttl_ms), ("private", 0))
+                self.assertIsNone(listing.next_cursor)
+                templates = await client.list_resource_templates()
+                self.assertEqual(templates.resource_templates, [])
+                result = await client.read_resource("company://handbook")
+                self.assertEqual((result.cache_scope, result.ttl_ms), ("private", 0))
+                self.assertEqual(len(result.contents), 1)
+                self.assertEqual(str(result.contents[0].uri), "company://handbook")
+                self.assertEqual(result.contents[0].mime_type, "text/plain")
+                self.assertEqual(result.contents[0].text, "Welcome to the company. Ask questions and share what you learn.")
+                with self.assertRaises(MCPError) as caught:
+                    await client.read_resource("company://missing")
+                self.assertEqual(caught.exception.error.code, -32602)
+
     async def test_discovery(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
