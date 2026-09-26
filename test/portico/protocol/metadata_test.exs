@@ -23,6 +23,68 @@ defmodule Portico.Protocol.MetadataTest do
     assert Validation.request_metadata(%{"_meta" => meta, "name" => "add"}) == {:ok, meta}
   end
 
+  test "preserves valid metadata names, prefixes and opaque extension data" do
+    for key <- [
+          "",
+          "a",
+          "0",
+          "A0",
+          "a-b_c.d",
+          "com.example/trace",
+          "a/x",
+          "a/",
+          "A.B2-C/name",
+          "io.modelcontextprotocol/future",
+          "dev.mcp/future",
+          "com.example.mcp/custom"
+        ] do
+      meta = Map.put(@meta, key, %{"not a metadata key/!" => [nil, true]})
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:ok, meta}
+    end
+
+    meta =
+      Map.merge(@meta, %{
+        "traceparent" => "00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01",
+        "tracestate" => "vendor=value",
+        "baggage" => "key=value"
+      })
+
+    assert Validation.request_metadata(%{"_meta" => meta}) == {:ok, meta}
+  end
+
+  test "rejects malformed metadata names and prefixes" do
+    for key <- [
+          "bad key",
+          "_name",
+          "name_",
+          ".name",
+          "name.",
+          "-name",
+          "name-",
+          "/name",
+          "/",
+          "com..example/name",
+          ".com/name",
+          "com./name",
+          "1com/name",
+          "com.1example/name",
+          "-com/name",
+          "com-/name",
+          "com.ex_ample/name",
+          "com.example/a/b",
+          "com.example/名",
+          "名/name",
+          "x\n",
+          "x\r",
+          "x\t",
+          "x\0",
+          <<255>>
+        ] do
+      meta = Map.put(@meta, key, "opaque")
+      assert Validation.request_metadata(%{"_meta" => meta}) == {:error, :invalid_params}
+    end
+  end
+
   test "accepts all protocol log levels unchanged and permits omission" do
     assert Validation.request_metadata(%{"_meta" => @meta}) == {:ok, @meta}
 

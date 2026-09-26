@@ -520,3 +520,11 @@ and `websiteUrl` must be strings. Each `icons` entry needs a string `src`; optio
 Unknown fields are preserved. Malformed values return HTTP 400 / JSON-RPC -32602.
 These are structural checks, not URI, MIME or size-format validation. Portico does
 not fetch icons; client information remains self-reported, not authenticated identity.
+
+
+Request `_meta` keys are checked against MCP's optional prefix/name syntax:
+`com.example/trace` and `traceId` are valid; `bad key` and `/trace` are not.
+Empty names are allowed by the protocol. Unknown well-formed keys and their
+values are preserved, including future reserved-prefix extension keys. Keys
+inside extension values are not interpreted as metadata. Invalid names return
+HTTP 400 / JSON-RPC -32602 before tool execution.

@@ -261,6 +261,51 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(status, 200)
                     self.assertEqual(body["result"]["content"][0]["text"], "5")
 
+    async def test_request_metadata_keys(self):
+        async def invoke(key):
+            payload = {
+                "jsonrpc": "2.0", "id": 27, "method": "tools/call",
+                "params": {
+                    "name": "add", "arguments": {"a": 2, "b": 3},
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                        key: {"opaque data/!": [None, True]},
+                    },
+                },
+            }
+
+            def post():
+                request = urllib.request.Request(URL, data=json.dumps(payload).encode(), headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                    "Mcp-Method": "tools/call", "Mcp-Name": "add",
+                })
+                try:
+                    response = urllib.request.urlopen(request, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    return response.status, json.load(response)
+
+            return await asyncio.to_thread(post)
+
+        async with asyncio.timeout(15):
+            for key in ["bad key", "_name", "name-", "/name", "com..example/name",
+                        "1com/name", "com-/name", "com.example/a/b", "名", "x\n"]:
+                with self.subTest(invalid=key):
+                    status, body = await invoke(key)
+                    self.assertEqual(status, 400)
+                    self.assertEqual(body["error"]["code"], -32602)
+                    self.assertEqual(body["id"], 27)
+            for key in ["", "a", "0", "a-b_c.d", "com.example/trace", "a/",
+                        "A.B2-C/name", "io.modelcontextprotocol/future", "dev.mcp/future"]:
+                with self.subTest(valid=key):
+                    status, body = await invoke(key)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["result"]["content"][0]["text"], "5")
+
     async def test_add(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

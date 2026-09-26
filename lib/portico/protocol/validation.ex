@@ -1,6 +1,9 @@
 defmodule Portico.Protocol.Validation do
   @moduledoc false
 
+  @meta_name ~r/\A(?:[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)?\z/
+  @meta_prefix ~r/\A[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\z/
+
   @log_levels ~w(debug info notice warning error critical alert emergency)
 
   @doc """
@@ -57,15 +60,18 @@ defmodule Portico.Protocol.Validation do
   Elicitation and its optional `form`/`url` fields must be string-keyed objects.
   Empty declarations and unknown extension fields are preserved unchanged.
 
+  Request metadata keys follow MCP's optional prefix/name grammar, including
+  empty names. Unknown well-formed keys are preserved, including reserved-prefix
+  keys; nested extension data is not interpreted as metadata.
+
   This is structural validation only. Supported-version checks, other capability
-  payloads, optional metadata fields, and metadata key naming rules are separate
-  checks. Client information is self-reported and does not establish identity.
+  payloads and remaining optional metadata fields are separate checks. Client information is self-reported and does not establish identity.
   This function applies to requests, not notifications. Errors map to
   JSON-RPC Invalid params (-32602).
   """
   @spec request_metadata(term()) :: {:ok, map()} | {:error, :invalid_params}
   def request_metadata(%{"_meta" => meta} = params) do
-    if object?(params) and object?(meta) and
+    if object?(params) and object?(meta) and Enum.all?(Map.keys(meta), &meta_key?/1) and
          string?(meta["io.modelcontextprotocol/protocolVersion"]) and
          capabilities_valid?(meta["io.modelcontextprotocol/clientCapabilities"]) and
          client_info_valid?(meta) and
@@ -89,6 +95,16 @@ defmodule Portico.Protocol.Validation do
       {:ok, name, arguments}
     else
       {:error, :invalid_params}
+    end
+  end
+
+  # Validate only the metadata keys, not keys inside opaque extension values.
+  # Empty names are explicitly permitted. Unknown reserved-prefix keys may be
+  # defined by newer protocol extensions and are not rejected by a whitelist.
+  defp meta_key?(key) do
+    case String.split(key, "/", parts: 2) do
+      [name] -> Regex.match?(@meta_name, name)
+      [prefix, name] -> Regex.match?(@meta_prefix, prefix) and Regex.match?(@meta_name, name)
     end
   end
 
