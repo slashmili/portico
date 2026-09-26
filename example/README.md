@@ -700,8 +700,7 @@ invalid declarations fail at compilation.
 For a single text or binary item, Portico supplies the concrete requested URI
 and declared MIME type. List reads preserve each item's URI and MIME type. Resources are listed in URI order;
 listing and reading use private caching with zero TTL. There is no pagination;
-cursors are rejected. Subscriptions and URL elicitation during reads
-remain future slices. Python E2E checks both catalogs, text content, decoded
+cursors are rejected. Subscriptions remain a future slice. Python E2E checks both catalogs, text content, decoded
 template variables and missing URI errors.
 
 ## Resource templates
@@ -935,4 +934,61 @@ checks the signed envelope first. Signing does not authenticate a user.
 
 Missing form support returns `{:error, :form_not_supported}` in helpers and MCP
 `-32021`. Invalid tokens return `{:error, :invalid_request_state}` and MCP
-`-32602`. Resource URL elicitation and streaming remain future slices.
+`-32602`. Resource streaming remains a future slice.
+
+
+## URL elicitation during resource reads
+
+Read `company://reviewed-report` to receive a browser approval link before the
+resource returns the fictional report. This reuses the browser page and demo
+identity checks from `approve_report`; it is not OAuth or account linking.
+
+Launch Inspector with the same demo Authorization header:
+
+```sh
+npx @modelcontextprotocol/inspector \
+  --server-url http://127.0.0.1:4000/mcp \
+  --transport http \
+  --protocol-era modern \
+  --header "Authorization: Basic YWxpY2U6YWxpY2UtZGVtbw=="
+```
+
+Open **Resources** and read `company://reviewed-report`. Open its elicitation
+URL, sign into the browser as `alice / alice-demo`, and click **Approve report**.
+Return to Inspector and accept/retry the pending read. The result is
+“Reviewed sample report: 3 orders, total 42 EUR.”
+
+The MCP client must advertise URL elicitation support. The browser authenticates
+separately; the MCP header is not automatically forwarded. Accepting before
+browser approval reissues the URL. Decline or cancel returns status text without
+the report. Without demo credentials, the example returns login instructions.
+
+The resource uses the same callback shape as URL tools:
+
+```elixir
+{:ok, input} = Portico.Input.url("Review the report", url: review_url)
+{:ok, input, approval_id}
+```
+
+`handle_input/3` receives `:accept`, `:decline` or `:cancel` and the verified
+application state. On accept, check the browser workflow's completion and identity
+before returning content. The example does that through `ReportApprovals.get/2`.
+
+Test helpers use the same continuation options:
+
+```elixir
+mcp = %{mcp |
+  assigns: %{demo_user: "alice"},
+  client_capabilities: %{"elicitation" => %{"url" => %{}}}
+}
+{:ok, input, state} = read_resource mcp, "company://reviewed-report"
+# Complete the application's browser workflow before retrying with accept.
+{:ok, content} =
+  read_resource mcp, "company://reviewed-report",
+    request_state: state,
+    input_responses: %{"url" => %{"action" => "accept"}}
+```
+
+URL replies omit `content`. The signed URL and state retain the same server,
+resource route/URI binding and five-minute expiry as form reads. Missing URL
+support returns `:url_not_supported` in helpers and MCP `-32021`.

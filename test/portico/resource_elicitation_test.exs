@@ -75,7 +75,8 @@ defmodule Portico.ResourceElicitationTest do
   end
 
   defmodule Url do
-    use Resource, name: "url"
+    use Resource, name: "url", elicitation_verifier: &Custom.verify/2
+    defdelegate handle_input(answer, state, request), to: Form
 
     def read(_) do
       {:ok, input} = Input.url("Open", url: "https://example.com")
@@ -97,6 +98,7 @@ defmodule Portico.ResourceElicitationTest do
     resource "company://missing", Missing
     resource "company://url", Url
     resource_template "company://form/{name}", Form
+    resource_template "company://url/{name}", Url
     tool "form", Tool
   end
 
@@ -309,7 +311,7 @@ defmodule Portico.ResourceElicitationTest do
     end
 
     assert {:error, :missing_input_callback} = Test.read_resource(mcp, "company://missing")
-    assert {:error, :invalid_callback_return} = Test.read_resource(mcp, "company://url")
+    assert {:error, :url_not_supported} = Test.read_resource(mcp, "company://url")
 
     assert {:error, :invalid_params} =
              Test.read_resource(mcp, "company://form", request_state: nil)
@@ -322,6 +324,80 @@ defmodule Portico.ResourceElicitationTest do
 
     Application.delete_env(:portico, Server)
     assert {:error, :elicitation_key_missing} = Test.read_resource(mcp, "company://form")
+  end
+
+  test "URL inputs support static and template reads, re-asking and all actions", %{mcp: mcp} do
+    mcp = %{mcp | client_capabilities: %{"elicitation" => %{"url" => %{}}}}
+
+    for uri <- ["company://url", "company://url/a"] do
+      {:ok, input, token} = Test.read_resource(mcp, uri)
+      assert input.mode == :url
+      assert input.url == "https://example.com"
+      assert {:ok, ^input, _} = Test.read_resource(mcp, uri, request_state: token)
+
+      for action <- ["accept", "decline", "cancel"] do
+        assert {:ok, %Resource{text: "done", uri: ^uri}} =
+                 Test.read_resource(mcp, uri,
+                   request_state: token,
+                   input_responses: %{"url" => %{"action" => action}}
+                 )
+
+        assert_received {:handled, _, "custom:state", %Portico.Request{resource_uri: ^uri}}
+      end
+
+      assert {:error, :invalid_request_state} =
+               Test.read_resource(mcp, uri, request_state: token <> "x")
+
+      assert {:error, :invalid_request_state} =
+               Test.read_resource(mcp, "company://url/other", request_state: token)
+
+      for responses <- [
+            %{"form" => %{"action" => "cancel"}},
+            %{"url" => %{"action" => "accept", "content" => %{}}}
+          ] do
+        assert {:error, :invalid_params} =
+                 Test.read_resource(mcp, uri, request_state: token, input_responses: responses)
+      end
+    end
+  end
+
+  test "URL resource capability errors use the URL requirement on initial and resumed reads", %{
+    mcp: mcp
+  } do
+    supported = %{mcp | client_capabilities: %{"elicitation" => %{"url" => %{}}}}
+    {:ok, _, token} = Test.read_resource(supported, "company://url")
+
+    {:reply, pending} =
+      Dispatcher.dispatch(Server, message(supported, %{"uri" => "company://url"}), mcp.assigns)
+
+    assert pending["result"]["inputRequests"]["url"]["params"] ==
+             %{"mode" => "url", "message" => "Open", "url" => "https://example.com"}
+
+    for capabilities <- [%{}, %{"elicitation" => %{}}, %{"elicitation" => %{"form" => %{}}}],
+        extra <- [
+          %{},
+          %{"requestState" => token, "inputResponses" => %{"url" => %{"action" => "cancel"}}}
+        ] do
+      context = %{mcp | client_capabilities: capabilities}
+
+      assert {:error, :url_not_supported} =
+               Test.read_resource(context, "company://url", request_state: token)
+
+      {:reply, reply} =
+        Dispatcher.dispatch(
+          Server,
+          message(context, Map.put(extra, "uri", "company://url")),
+          mcp.assigns
+        )
+
+      assert reply["error"] == %{
+               "code" => -32021,
+               "message" => "Missing required client capability",
+               "data" => %{"requiredCapabilities" => %{"elicitation" => %{"url" => %{}}}}
+             }
+    end
+
+    refute_received {:handled, _, _, _}
   end
 
   defp message(mcp, extra) do

@@ -179,8 +179,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:input, _form, _state, fields} ->
         input_required(server, context.id, fields)
 
-      {:input_error, :form_not_supported} ->
-        {:reply, Error.response(:form_not_supported, context.id)}
+      {:input_error, reason} when reason in [:form_not_supported, :url_not_supported] ->
+        {:reply, Error.response(reason, context.id)}
 
       {:input_error, _reason} ->
         {:reply, Error.response(:invalid_params, context.id)}

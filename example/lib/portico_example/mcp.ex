@@ -10,6 +10,7 @@ defmodule PorticoExample.MCP do
   tool "summarize", PorticoExample.Tools.Summarize
   resource "company://docs", PorticoExample.Resources.Documents
   resource "company://handbook", PorticoExample.Resources.Handbook
+  resource "company://reviewed-report", PorticoExample.Resources.ReviewedReport
   resource "company://sample", PorticoExample.Resources.Sample
   resource "company://welcome", PorticoExample.Resources.Welcome
   resource_template "company://handbook/{section}", PorticoExample.Resources.HandbookSection

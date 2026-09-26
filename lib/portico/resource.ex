@@ -39,23 +39,26 @@ defmodule Portico.Resource do
   An empty list represents an existing resource with no contents, not a missing resource.
   Invalid items reject the entire read with `:invalid_resource` in test helpers.
   Use `blob/1` for raw bytes; the protocol encodes them as base64.
-  For form elicitation, return `{:ok, form, application_state}` and implement
-  `handle_input/3`. Application state is a UTF-8 string. The handler receives
+  For form or URL elicitation, return `{:ok, form, application_state}` and implement
+  `handle_input/3`. Build inputs with `Portico.Input.form/2` or `Portico.Input.url/2`. Application state is a UTF-8 string. The handler receives
   `{:accept, content}`, `:decline`, or `:cancel`, the verified state and a fresh
-  request. It can return content, a list, another form or an error tuple.
+  request. URL replies are `:accept`, `:decline`, or `:cancel` without content.
+  It can return content, a list, another input or an error tuple.
   Missing or schema-invalid answers reissue the form without invoking the handler.
 
   Configure the per-server signing key described in `Portico.Elicitation`.
   Tokens expire after five minutes and bind the server, resource module/route,
-  requested URI and form schema. They are signed, not encrypted or single-use.
+  requested URI and input (form schema or URL). They are signed, not encrypted or single-use.
   The optional `elicitation_verifier: &MyApp.Elicitation.verify/2` uses the same
   contract as tools; application identity checks remain the application's job.
   The signed envelope is always checked before a custom verifier runs.
 
-  Clients need form elicitation support; otherwise reads return
-  `:form_not_supported` in helpers and MCP `-32021`. Tampered or mismatched tokens
+  Clients need the corresponding elicitation capability; otherwise reads return
+  `:form_not_supported` or `:url_not_supported` in helpers and MCP `-32021`. Tampered or mismatched tokens
   return `:invalid_request_state` in helpers and MCP `-32602`.
-  Resource URL elicitation, streaming and subscriptions are not implemented yet. Listings and reads use private caching
+  URL acceptance is consent, not proof of browser completion; application code
+  must check its own workflow state and identity before returning protected content.
+  Resource streaming and subscriptions are not implemented yet. Listings and reads use private caching
   with zero TTL. Catalogs are static and are not filtered by caller identity.
   """
   defstruct [:text, :blob, :uri, :mime_type]

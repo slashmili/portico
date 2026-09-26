@@ -75,6 +75,12 @@ def setUpModule():
 
 class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
     async def test_approve_report_browser_completion(self):
+        await self._assert_report_browser_completion()
+
+    async def test_reviewed_report_browser_completion(self):
+        await self._assert_report_browser_completion(read_resource=True)
+
+    async def _assert_report_browser_completion(self, read_resource=False):
         seen = []
 
         async def on_url(context, params):
@@ -107,12 +113,23 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
         endpoint = URL.replace("://", "://alice:alice-demo@", 1)
         async with asyncio.timeout(15):
             async with Client(endpoint, read_timeout_seconds=10, elicitation_callback=on_url) as client:
-                result = await client.call_tool("approve_report", {})
-                self.assertFalse(result.is_error)
-                self.assertEqual(result.content[0].text, "Demo report approved.")
+                if read_resource:
+                    result = await client.read_resource("company://reviewed-report")
+                    self.assertEqual(result.contents[0].text, "Reviewed sample report: 3 orders, total 42 EUR.")
+                    self.assertEqual(str(result.contents[0].uri), "company://reviewed-report")
+                else:
+                    result = await client.call_tool("approve_report", {})
+                    self.assertFalse(result.is_error)
+                    self.assertEqual(result.content[0].text, "Demo report approved.")
                 self.assertEqual(len(seen), 2)
 
     async def test_approve_report_decline_cancel(self):
+        await self._assert_report_decline_cancel()
+
+    async def test_reviewed_report_decline_cancel(self):
+        await self._assert_report_decline_cancel(read_resource=True)
+
+    async def _assert_report_decline_cancel(self, read_resource=False):
         for action, expected in [("decline", "declined"), ("cancel", "cancelled")]:
             async def on_url(context, params):
                 self.assertEqual(params.mode, "url")
@@ -120,9 +137,13 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             endpoint = URL.replace("://", "://alice:alice-demo@", 1)
             async with asyncio.timeout(15):
                 async with Client(endpoint, read_timeout_seconds=10, elicitation_callback=on_url) as client:
-                    result = await client.call_tool("approve_report", {})
-                    self.assertTrue(result.is_error)
-                    self.assertEqual(result.content[0].text, f"Report approval {expected}.")
+                    if read_resource:
+                        result = await client.read_resource("company://reviewed-report")
+                        self.assertEqual(result.contents[0].text, f"Report approval {expected}.")
+                    else:
+                        result = await client.call_tool("approve_report", {})
+                        self.assertTrue(result.is_error)
+                        self.assertEqual(result.content[0].text, f"Report approval {expected}.")
 
     async def test_approve_report_requires_demo_identity_and_url_capability(self):
         async with asyncio.timeout(15):
@@ -136,12 +157,24 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.error.code, -32021)
                 self.assertEqual(caught.exception.error.data, {"requiredCapabilities": {"elicitation": {"url": {}}}})
 
+    async def test_reviewed_report_requires_identity_and_url_capability(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                result = await client.read_resource("company://reviewed-report")
+                self.assertIn("Use demo Basic auth", result.contents[0].text)
+            endpoint = URL.replace("://", "://alice:alice-demo@", 1)
+            async with Client(endpoint, read_timeout_seconds=10) as client:
+                with self.assertRaises(MCPError) as caught:
+                    await client.read_resource("company://reviewed-report")
+                self.assertEqual(caught.exception.error.code, -32021)
+                self.assertEqual(caught.exception.error.data, {"requiredCapabilities": {"elicitation": {"url": {}}}})
+
     async def test_resources(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertIsNotNone(client.server_capabilities.resources)
                 listing = await client.list_resources()
-                self.assertEqual(len(listing.resources), 4)
+                self.assertEqual(len(listing.resources), 5)
                 resource = next(item for item in listing.resources if str(item.uri) == "company://handbook")
                 self.assertEqual(str(resource.uri), "company://handbook")
                 self.assertEqual(resource.name, "handbook")

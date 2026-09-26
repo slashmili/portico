@@ -181,7 +181,10 @@ defmodule Portico.Test do
   Forms return `{:ok, %Portico.Input{}, signed_state}`. Set
   `%{"elicitation" => %{"form" => %{}}}` in context client capabilities and retry
   the same URI with `request_state:` and `input_responses:`, as for tool forms.
-  Resource replies support forms only; URL inputs and streaming remain unsupported.
+  URL inputs use the same tuple with `mode: :url`. Declare the client's
+  `elicitation.url` capability, then retry with
+  `input_responses: %{"url" => %{"action" => "accept"}}` (no content).
+  Resource streaming remains unsupported.
   """
   @spec read_resource(module() | Context.t(), String.t(), keyword()) ::
           {:ok, Portico.Resource.t() | [Portico.Resource.t()]}

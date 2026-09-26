@@ -71,12 +71,12 @@ defmodule Portico.Protocol.Resources do
 
         {:resume, answer, token} ->
           if function_exported?(resource.module, :handle_input, 3),
-            do: Elicitation.resume(resource.module, answer, token, request, [:form]),
+            do: Elicitation.resume(resource.module, answer, token, request),
             else: {:input_error, :invalid_params}
       end
 
     case outcome do
-      {:ok, %Input{mode: :form} = form, state} ->
+      {:ok, %Input{} = form, state} ->
         if function_exported?(resource.module, :handle_input, 3),
           do: Dispatcher.input_result(form, state, request),
           else: {:error, :missing_input_callback}

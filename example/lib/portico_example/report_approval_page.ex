@@ -59,7 +59,7 @@ defmodule PorticoExample.ReportApprovalPage do
       send_resp(
         conn,
         200,
-        "Report approved. Return to your MCP client and retry the tool."
+        "Report approved. Return to your MCP client and retry the request."
       )
     else
       _ -> send_resp(conn, 400, "Invalid confirmation")
