@@ -4,6 +4,7 @@
   locals_without_parens: [
     tool: 2,
     resource: 2,
+    resource_template: 2,
     read_resource: 2,
     read_resource: 3,
     call_tool: 3,
@@ -14,6 +15,7 @@
     locals_without_parens: [
       tool: 2,
       resource: 2,
+      resource_template: 2,
       read_resource: 2,
       read_resource: 3,
       call_tool: 3,

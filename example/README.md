@@ -697,9 +697,94 @@ error reasons and lets application exceptions surface in tests. HTTP returns
 callback failures. Constructors and invalid helper inputs return error tuples;
 invalid declarations fail at compilation.
 
-This slice returns one UTF-8 text item per read. Portico supplies its URI and
-optional MIME type from the declaration. Resources are listed in URI order;
+This slice returns one UTF-8 text or binary item per read. Portico supplies its URI and
+optional MIME type (the URI is the concrete requested URI). Resources are listed in URI order;
 listing and reading use private caching with zero TTL. There is no pagination;
-cursors are rejected. `resources/templates/list` returns an empty list. URI
-templates, binary content, subscriptions and elicitation during reads remain
-future slices. Python E2E checks the catalog, text content and missing URI error.
+cursors are rejected. Multiple contents, subscriptions and elicitation during reads
+remain future slices. Python E2E checks both catalogs, text content, decoded
+template variables and missing URI errors.
+
+## Resource templates
+
+A template routes a family of URIs to one resource module:
+
+```elixir
+resource_template "company://handbook/{section}", PorticoExample.Resources.HandbookSection
+```
+
+The module uses the same `read/1` callback as a static resource:
+
+```elixir
+defmodule PorticoExample.Resources.HandbookSection do
+  use Portico.Resource,
+    name: "handbook-section",
+    description: "A generated handbook section heading.",
+    mime_type: "text/plain"
+
+  def read(%{resource_params: %{"section" => section}}) do
+    {:ok, content} = Portico.Resource.text("Handbook section: #{section}")
+    {:ok, content}
+  end
+end
+```
+
+This example generates a heading for any section name. It does not look up a file.
+In Inspector, open **Resources**, list templates, choose
+`company://handbook/{section}` and supply `leave` for `section`, then read it.
+The resulting URI is `company://handbook/leave`.
+
+```elixir
+{:ok, content} = read_resource mcp, "company://handbook/caf%C3%A9"
+assert content.text == "Handbook section: café"
+assert content.uri == "company://handbook/caf%C3%A9"
+```
+
+Variables are string-keyed and percent-decoded once in `request.resource_params`.
+Static reads have an empty params map. Templates are advertised separately by
+`resources/templates/list`; `resources/list` contains only static declarations.
+
+This slice supports simple variables occupying whole path segments. Query,
+reserved, exploded, prefix and partial-segment expressions fail at compilation.
+Static routes win over templates. Duplicate template shapes fail at compilation;
+other overlapping matches return `{:error, :ambiguous_resource}` in helpers and
+a sanitized internal error over HTTP. Decoded variables are untrusted application
+input: `a%2Fb` becomes `a/b`, so do not turn them into unchecked filesystem paths.
+
+
+## Binary resources
+
+Read `company://sample` from Inspector's **Resources** tab to try a binary resource.
+It contains four fixed bytes and requires no files or authentication.
+
+```elixir
+resource "company://sample", PorticoExample.Resources.Sample
+```
+
+```elixir
+defmodule PorticoExample.Resources.Sample do
+  use Portico.Resource,
+    name: "sample",
+    description: "Four sample bytes.",
+    mime_type: "application/octet-stream"
+
+  def read(_request) do
+    {:ok, content} = Portico.Resource.blob(<<0, 1, 2, 255>>)
+    {:ok, content}
+  end
+end
+```
+
+Pass raw bytes to `Resource.blob/1`, including an empty binary if needed.
+Other values return `{:error, :invalid_blob}`. The test helper returns raw bytes:
+
+```elixir
+{:ok, content} = read_resource mcp, "company://sample"
+assert content.blob == <<0, 1, 2, 255>>
+assert content.text == nil
+```
+
+Portico encodes those bytes as base64 (`AAEC/w==`) in the protocol's `blob`
+field and omits `text`. Do not base64-encode the constructor input yourself.
+A callback must return exactly one payload: text or blob. Malformed structs return
+`{:error, :invalid_resource}` in helpers and a sanitized internal error over HTTP.
+Both static and template routes support binary content.

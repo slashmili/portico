@@ -1,6 +1,21 @@
 defmodule PorticoExample.ResourceTest do
   use Portico.Test, server: PorticoExample.MCP, async: true
 
+  test "reads raw bytes", %{mcp: mcp} do
+    {:ok, content} = read_resource mcp, "company://sample"
+    assert content.blob == <<0, 1, 2, 255>>
+    assert content.text == nil
+    assert content.uri == "company://sample"
+    assert content.mime_type == "application/octet-stream"
+  end
+
+  test "reads a template with decoded variables", %{mcp: mcp} do
+    {:ok, content} = read_resource(mcp, "company://handbook/caf%C3%A9")
+    assert content.uri == "company://handbook/caf%C3%A9"
+    assert content.text == "Handbook section: café"
+    assert content.mime_type == "text/plain"
+  end
+
   test "reads the declared handbook", %{mcp: mcp} do
     {:ok, content} = read_resource(mcp, "company://handbook")
     assert content.uri == "company://handbook"

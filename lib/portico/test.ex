@@ -168,13 +168,13 @@ defmodule Portico.Test do
   def call_tool(_target, _name, _arguments, _options), do: {:error, :invalid_target}
 
   @doc """
-  Reads one declared static resource through protocol validation without HTTP.
+  Reads a static or template resource through protocol validation without HTTP.
 
       {:ok, content} = read_resource mcp, "company://handbook"
       assert content.text == "Welcome to the company."
 
   Accepts a server module or test context and an optional `assigns:` override.
-  Returns `{:ok, %Portico.Resource{}}` with URI/MIME type filled from the route,
+  Returns `{:ok, %Portico.Resource{}}` with the requested URI and declared MIME type,
   or `{:error, reason}`. Callback exceptions remain visible in tests.
   """
   @spec read_resource(module() | Context.t(), String.t(), keyword()) ::

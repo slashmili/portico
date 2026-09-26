@@ -141,7 +141,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertIsNotNone(client.server_capabilities.resources)
                 listing = await client.list_resources()
-                self.assertEqual(len(listing.resources), 1)
+                self.assertEqual(len(listing.resources), 2)
                 resource = listing.resources[0]
                 self.assertEqual(str(resource.uri), "company://handbook")
                 self.assertEqual(resource.name, "handbook")
@@ -150,7 +150,12 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((listing.cache_scope, listing.ttl_ms), ("private", 0))
                 self.assertIsNone(listing.next_cursor)
                 templates = await client.list_resource_templates()
-                self.assertEqual(templates.resource_templates, [])
+                self.assertEqual(len(templates.resource_templates), 1)
+                template = templates.resource_templates[0]
+                self.assertEqual(template.uri_template, "company://handbook/{section}")
+                self.assertEqual(template.name, "handbook-section")
+                self.assertEqual(template.mime_type, "text/plain")
+                self.assertEqual((templates.cache_scope, templates.ttl_ms), ("private", 0))
                 result = await client.read_resource("company://handbook")
                 self.assertEqual((result.cache_scope, result.ttl_ms), ("private", 0))
                 self.assertEqual(len(result.contents), 1)
@@ -159,6 +164,34 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.contents[0].text, "Welcome to the company. Ask questions and share what you learn.")
                 with self.assertRaises(MCPError) as caught:
                     await client.read_resource("company://missing")
+                self.assertEqual(caught.exception.error.code, -32602)
+
+    async def test_binary_resource(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                listing = await client.list_resources()
+                sample = next(item for item in listing.resources if str(item.uri) == "company://sample")
+                self.assertEqual(sample.mime_type, "application/octet-stream")
+                result = await client.read_resource("company://sample")
+                self.assertEqual((result.cache_scope, result.ttl_ms), ("private", 0))
+                self.assertEqual(len(result.contents), 1)
+                content = result.contents[0]
+                self.assertEqual(str(content.uri), "company://sample")
+                self.assertEqual(content.mime_type, "application/octet-stream")
+                self.assertEqual(content.blob, "AAEC/w==")
+
+    async def test_resource_template(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                for suffix, section in [("leave", "leave"), ("caf%C3%A9", "café"), ("a%2Fb", "a/b")]:
+                    uri = "company://handbook/" + suffix
+                    result = await client.read_resource(uri)
+                    self.assertEqual(len(result.contents), 1)
+                    self.assertEqual(str(result.contents[0].uri), uri)
+                    self.assertEqual(result.contents[0].text, "Handbook section: " + section)
+                    self.assertEqual(result.contents[0].mime_type, "text/plain")
+                with self.assertRaises(MCPError) as caught:
+                    await client.read_resource("company://handbook/extra/path")
                 self.assertEqual(caught.exception.error.code, -32602)
 
     async def test_discovery(self):

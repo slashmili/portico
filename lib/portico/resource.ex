@@ -1,6 +1,6 @@
 defmodule Portico.Resource do
   @moduledoc """
-  Declares a static text resource and builds its content.
+  Declares a text or binary resource and builds its content.
 
       defmodule MyApp.Resources.Handbook do
         use Portico.Resource, name: "handbook", mime_type: "text/plain"
@@ -21,14 +21,30 @@ defmodule Portico.Resource do
   as tuples and propagate application exceptions; HTTP sanitizes callback failures
   as internal errors. Authorization belongs to the application.
 
-  This first slice returns one UTF-8 text item per read. The declared URI and MIME
+  Templates use the same callback:
+  `resource_template "company://handbook/{section}", MyApp.Resources.HandbookSection`.
+  Read decoded variables from `request.resource_params["section"]`. Variables
+  occupy whole path segments and are decoded once; names remain strings. Static
+  routes take precedence. Duplicate template shapes fail at compilation; other
+  ambiguous matches return `{:error, :ambiguous_resource}` in helpers and a
+  sanitized internal error over HTTP. Treat decoded values as untrusted input;
+  an encoded slash becomes a slash, not another routing segment.
+
+  This slice returns one UTF-8 text or binary item per read. The requested concrete URI and MIME
   type are supplied by Portico, overriding those fields in callback content.
-  Templates, binary content, multiple contents, elicitation during reads and
+  Use `blob/1` for raw bytes; the protocol encodes them as base64.
+  Multiple contents, elicitation during reads and
   subscriptions are not implemented yet. Listings and reads use private caching
   with zero TTL. Catalogs are static and are not filtered by caller identity.
   """
-  defstruct [:text, :uri, :mime_type]
-  @type t :: %__MODULE__{text: String.t(), uri: String.t() | nil, mime_type: String.t() | nil}
+  defstruct [:text, :blob, :uri, :mime_type]
+
+  @type t :: %__MODULE__{
+          text: String.t() | nil,
+          blob: binary() | nil,
+          uri: String.t() | nil,
+          mime_type: String.t() | nil
+        }
   @callback read(Portico.Request.t()) :: {:ok, t()} | {:error, term()}
 
   @doc "Builds UTF-8 text content, returning an error tuple for invalid values."
@@ -38,6 +54,16 @@ defmodule Portico.Resource do
   end
 
   def text(_), do: {:error, :invalid_text}
+
+  @doc """
+  Builds binary content from raw bytes, returning an error tuple for other values.
+
+  The struct stores raw bytes in `blob`, including empty binaries. Portico encodes
+  them as base64 only in protocol responses. Do not base64-encode the input.
+  """
+  @spec blob(binary()) :: {:ok, t()} | {:error, :invalid_blob}
+  def blob(value) when is_binary(value), do: {:ok, %__MODULE__{blob: value}}
+  def blob(_), do: {:error, :invalid_blob}
 
   @doc false
   def valid_uri?(value) when is_binary(value) do

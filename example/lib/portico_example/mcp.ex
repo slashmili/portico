@@ -8,5 +8,7 @@ defmodule PorticoExample.MCP do
   tool "count", PorticoExample.Tools.Count
   tool "greet", PorticoExample.Tools.Greet
   tool "summarize", PorticoExample.Tools.Summarize
-  resource("company://handbook", PorticoExample.Resources.Handbook)
+  resource "company://handbook", PorticoExample.Resources.Handbook
+  resource "company://sample", PorticoExample.Resources.Sample
+  resource_template "company://handbook/{section}", PorticoExample.Resources.HandbookSection
 end

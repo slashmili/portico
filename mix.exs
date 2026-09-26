@@ -31,6 +31,7 @@ defmodule Portico.MixProject do
       {:plug, "~> 1.20"},
       {:plug_crypto, "~> 2.1"},
       {:jsv, "~> 0.22.0"},
+      {:texture, "~> 2.0"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end

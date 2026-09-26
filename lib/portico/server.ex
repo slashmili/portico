@@ -1,6 +1,6 @@
 defmodule Portico.Server do
   @moduledoc """
-  Declares a server's identity, tool routes, and static resource routes.
+  Declares a server's identity, tool routes, and resource routes.
 
       defmodule MyApp.MCP do
         use Portico.Server, name: "my-app", version: "1.0.0"
@@ -8,7 +8,7 @@ defmodule Portico.Server do
         tool "add", MyApp.MCP.Tools.Add
       end
 
-  Inspect declarations with `info/1`, `tools/1`, and `resources/1`. Names are case-sensitive;
+  Inspect declarations with `info/1`, `tools/1`, `resources/1`, and `resource_templates/1`. Names are case-sensitive;
   duplicate tool names and malformed declarations raise compile-time errors.
   Server names and versions must be nonempty UTF-8 strings. Versions do not
   have to follow semantic versioning.
@@ -17,7 +17,7 @@ defmodule Portico.Server do
   Invoke tools with `Portico.Test.call_tool/4`. The protocol dispatcher supports
   discovery, listing, and completed tool calls through `Portico.Plug`. Schema
   declarations are checked at compilation and arguments before tool execution.
-  Resource modules use `Portico.Resource`; declare them with `resource/2` and
+  Resource modules use `Portico.Resource`; declare them with `resource/2` or `resource_template/2` and
   test reads with `Portico.Test.read_resource/3`.
   """
 
@@ -36,8 +36,9 @@ defmodule Portico.Server do
     quote do
       Module.register_attribute(__MODULE__, :portico_tools, accumulate: true)
       Module.register_attribute(__MODULE__, :portico_resources, accumulate: true)
+      Module.register_attribute(__MODULE__, :portico_resource_templates, accumulate: true)
       @portico_info Compiler.info!(unquote(options), __ENV__)
-      import Portico.Server, only: [tool: 2, resource: 2]
+      import Portico.Server, only: [tool: 2, resource: 2, resource_template: 2]
       @before_compile Portico.Server
     end
   end
@@ -61,6 +62,23 @@ defmodule Portico.Server do
     end
   end
 
+  @doc """
+  Routes a URI template to a module using Portico.Resource.
+
+  Supports simple variables occupying whole path segments, such as
+  `company://handbook/{section}`. Other RFC 6570 expressions fail at compilation.
+  Static routes take precedence; overlapping template matches return an error.
+  """
+  defmacro resource_template(uri_template, module) do
+    quote do
+      @portico_resource_templates {Compiler.resource_template!(
+                                     unquote(uri_template),
+                                     unquote(module),
+                                     __ENV__
+                                   ), __ENV__}
+    end
+  end
+
   @doc false
   defmacro __before_compile__(env) do
     info = Module.get_attribute(env.module, :portico_info)
@@ -77,8 +95,15 @@ defmodule Portico.Server do
       |> Enum.reverse()
       |> Compiler.resource_catalog!()
 
+    templates =
+      env.module
+      |> Module.get_attribute(:portico_resource_templates)
+      |> Enum.reverse()
+      |> Compiler.resource_template_catalog!()
+
     quote do
       @doc false
+      def __portico__(:resource_templates), do: unquote(Macro.escape(templates))
       def __portico__(:info), do: unquote(Macro.escape(info))
       def __portico__(:tools), do: unquote(Macro.escape(tools))
       def __portico__(:resources), do: unquote(Macro.escape(resources))
@@ -101,4 +126,8 @@ defmodule Portico.Server do
   @doc "Returns static resource declarations sorted by URI, including their modules."
   @spec resources(module()) :: [map()]
   def resources(server), do: server.__portico__(:resources)
+
+  @doc "Returns resource templates sorted by URI template, including their modules."
+  @spec resource_templates(module()) :: [map()]
+  def resource_templates(server), do: server.__portico__(:resource_templates)
 end

@@ -77,7 +77,7 @@ end
 
 `Portico.Test` supplies a fresh context for each test. Add
 `import_deps: [:portico]` to your `.formatter.exs` options to keep `tool`,
-`call_tool`, `resource`, `read_resource`, and `assert_text` calls without parentheses.
+`call_tool`, `resource`, `resource_template`, `read_resource`, and `assert_text` calls without parentheses.
 
 See the [runnable example](https://github.com/slashmili/portico/tree/HEAD/example)
 for a standalone Bandit server, forms, streaming, and real HTTP tests using the
@@ -124,10 +124,10 @@ Missing or mismatched output returns `{:error, :invalid_output}` in test helpers
 and a sanitized internal error over HTTP. Expected `Result.error/1` failures do
 not need to match the output schema. Try the example's `summarize` tool.
 
-Static text resources support listing and reading, with a `read_resource` test
-helper. See the example handbook resource.
+Text and binary resources support static URIs and templates with whole path variables, with
+a `read_resource` test helper. See the example handbook and handbook-section resources.
 
-Only MCP **2026-07-28** is implemented. Resource templates, binary resources,
+Only MCP **2026-07-28** is implemented. Multi-content resource reads,
 prompts, subscriptions, stdio,
 and legacy protocol versions are outside the current scope.
 Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.

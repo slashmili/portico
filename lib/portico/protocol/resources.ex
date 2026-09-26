@@ -3,7 +3,12 @@ defmodule Portico.Protocol.Resources do
   alias Portico.{Resource, Server}
 
   def metadata(resource) do
-    %{"uri" => resource.uri, "name" => resource.name}
+    {key, uri} =
+      if Map.has_key?(resource, :uri),
+        do: {"uri", resource.uri},
+        else: {"uriTemplate", resource.uri_template}
+
+    %{key => uri, "name" => resource.name}
     |> optional("description", resource[:description])
     |> optional("mimeType", resource[:mime_type])
   end
@@ -20,21 +25,39 @@ defmodule Portico.Protocol.Resources do
 
       true ->
         case Enum.find(Server.resources(server), &(&1.uri == uri)) do
-          nil -> {:error, :resource_not_found}
+          nil -> read_template(server, uri, request)
           resource -> invoke(resource, %{request | server: server, resource_uri: uri})
         end
     end
   end
 
+  defp read_template(server, uri, request) do
+    matches =
+      for resource <- Server.resource_templates(server),
+          {:ok, params} <- [Portico.Resource.Template.match(resource.matcher, uri)],
+          do: {resource, params}
+
+    case matches do
+      [] ->
+        {:error, :resource_not_found}
+
+      [{resource, params}] ->
+        invoke(resource, %{request | server: server, resource_uri: uri, resource_params: params})
+
+      _ ->
+        {:error, :ambiguous_resource}
+    end
+  end
+
   defp invoke(resource, request) do
     case resource.module.read(request) do
-      {:ok, %Resource{text: text}} ->
-        case Resource.text(text) do
-          {:ok, content} ->
-            content = %{content | uri: resource.uri, mime_type: resource[:mime_type]}
+      {:ok, %Resource{} = value} ->
+        case encode_content(value) do
+          {:ok, content, payload} ->
+            content = %{content | uri: request.resource_uri, mime_type: resource[:mime_type]}
 
             fields =
-              %{"uri" => content.uri, "text" => content.text}
+              Map.put(payload, "uri", content.uri)
               |> optional("mimeType", content.mime_type)
 
             {:ok, content, %{"contents" => [fields], "cacheScope" => "private", "ttlMs" => 0}}
@@ -50,6 +73,20 @@ defmodule Portico.Protocol.Resources do
         {:error, :invalid_callback_return}
     end
   end
+
+  defp encode_content(%Resource{text: text, blob: nil}) when is_binary(text) do
+    case Resource.text(text) do
+      {:ok, content} -> {:ok, content, %{"text" => text}}
+      {:error, _} -> {:error, :invalid_resource}
+    end
+  end
+
+  defp encode_content(%Resource{text: nil, blob: blob}) when is_binary(blob) do
+    {:ok, content} = Resource.blob(blob)
+    {:ok, content, %{"blob" => Base.encode64(blob)}}
+  end
+
+  defp encode_content(_), do: {:error, :invalid_resource}
 
   defp optional(map, _key, nil), do: map
   defp optional(map, key, value), do: Map.put(map, key, value)

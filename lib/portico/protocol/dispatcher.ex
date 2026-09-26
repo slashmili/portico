@@ -17,7 +17,7 @@ defmodule Portico.Protocol.Dispatcher do
   are ignored; no notification handlers are implemented yet.
 
   Checks the protocol version on every request before method lookup. Currently
-  `server/discover`, tool listing/calling, and static text resource listing/reading
+  `server/discover`, tool listing/calling, and text/binary resource and template listing/reading
   are implemented, including
   text and structured results, form elicitation, and request-scoped streaming.
   Discovery advertises basic tools support and resources when declared. Listing returns the whole
@@ -121,7 +121,7 @@ defmodule Portico.Protocol.Dispatcher do
       "cacheScope" => "private",
       "ttlMs" => 0,
       "capabilities" =>
-        if(Server.resources(server) == [],
+        if(Server.resources(server) == [] and Server.resource_templates(server) == [],
           do: %{"tools" => %{}},
           else: %{"tools" => %{}, "resources" => %{}}
         )
@@ -153,7 +153,9 @@ defmodule Portico.Protocol.Dispatcher do
       {key, items} =
         if method == "resources/list",
           do: {"resources", Enum.map(Server.resources(server), &Resources.metadata/1)},
-          else: {"resourceTemplates", []}
+          else:
+            {"resourceTemplates",
+             Enum.map(Server.resource_templates(server), &Resources.metadata/1)}
 
       complete(server, id, %{key => items, "cacheScope" => "private", "ttlMs" => 0})
     end

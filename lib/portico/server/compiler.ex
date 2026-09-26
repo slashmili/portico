@@ -117,6 +117,32 @@ defmodule Portico.Server.Compiler do
     unless Portico.Resource.valid_uri?(uri),
       do: error!(env, "expected resource URI to be an absolute URI without template variables")
 
+    resource_module!(module, env) |> Map.merge(%{uri: uri, module: module})
+  end
+
+  def resource_template!(uri_template, module, env) do
+    case Portico.Resource.Template.build(uri_template) do
+      {:ok, matcher} ->
+        resource_module!(module, env)
+        |> Map.merge(%{uri_template: uri_template, module: module, matcher: matcher})
+
+      {:error, _} ->
+        error!(env, "expected a resource URI template with simple whole-path-segment variables")
+    end
+  end
+
+  def resource_template_catalog!(declarations) do
+    Enum.reduce(declarations, MapSet.new(), fn {resource, env}, shapes ->
+      if MapSet.member?(shapes, resource.matcher.shape),
+        do: error!(env, "duplicate resource template shape #{inspect(resource.uri_template)}")
+
+      MapSet.put(shapes, resource.matcher.shape)
+    end)
+
+    declarations |> Enum.map(fn {resource, _} -> resource end) |> Enum.sort_by(& &1.uri_template)
+  end
+
+  defp resource_module!(module, env) do
     unless is_atom(module) and module not in [nil, true, false] and
              Code.ensure_compiled(module) == {:module, module} and
              function_exported?(module, :__portico_resource__, 0) and
@@ -125,7 +151,6 @@ defmodule Portico.Server.Compiler do
 
     module
     |> Macro.compile_apply(:__portico_resource__, [], env)
-    |> Map.merge(%{uri: uri, module: module})
   end
 
   def resource_catalog!(declarations) do
