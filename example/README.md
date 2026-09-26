@@ -697,10 +697,10 @@ error reasons and lets application exceptions surface in tests. HTTP returns
 callback failures. Constructors and invalid helper inputs return error tuples;
 invalid declarations fail at compilation.
 
-This slice returns one UTF-8 text or binary item per read. Portico supplies its URI and
-optional MIME type (the URI is the concrete requested URI). Resources are listed in URI order;
+For a single text or binary item, Portico supplies the concrete requested URI
+and declared MIME type. List reads preserve each item's URI and MIME type. Resources are listed in URI order;
 listing and reading use private caching with zero TTL. There is no pagination;
-cursors are rejected. Multiple contents, subscriptions and elicitation during reads
+cursors are rejected. Subscriptions and elicitation during reads
 remain future slices. Python E2E checks both catalogs, text content, decoded
 template variables and missing URI errors.
 
@@ -785,6 +785,58 @@ assert content.text == nil
 
 Portico encodes those bytes as base64 (`AAEC/w==`) in the protocol's `blob`
 field and omits `text`. Do not base64-encode the constructor input yourself.
-A callback must return exactly one payload: text or blob. Malformed structs return
+Each content item must contain exactly one payload: text or blob. Malformed structs return
 `{:error, :invalid_resource}` in helpers and a sanitized internal error over HTTP.
 Both static and template routes support binary content.
+
+
+## Multiple contents in one read
+
+Read `company://docs` in Inspector's **Resources** tab to receive two generated
+documents. Declare the resource normally:
+
+```elixir
+resource "company://docs", PorticoExample.Resources.Documents
+```
+
+Its `read/1` returns a list:
+
+```elixir
+def read(_request) do
+  {:ok, readme} =
+    Portico.Resource.text("Welcome",
+      uri: "company://docs/readme",
+      mime_type: "text/plain"
+    )
+
+  {:ok, guide} =
+    Portico.Resource.text("# Getting started",
+      uri: "company://docs/guide",
+      mime_type: "text/markdown"
+    )
+
+  {:ok, [readme, guide]}
+end
+```
+
+`Resource.text/2` and `Resource.blob/2` accept optional `uri:` and `mime_type:`.
+Invalid URIs or MIME values return `{:error, :invalid_uri}` or
+`{:error, :invalid_mime_type}`; unknown, duplicate or malformed options return
+`{:error, :invalid_options}`.
+
+Every list item requires an absolute URI. MIME type is optional per item and
+does not inherit the directory's MIME type. Lists may mix text and binary items.
+Portico preserves order and rejects the whole read if any item is invalid.
+The content URIs identify returned items; they do not automatically register
+independently readable routes.
+
+```elixir
+{:ok, [readme, guide]} = read_resource mcp, "company://docs"
+assert readme.uri == "company://docs/readme"
+assert guide.mime_type == "text/markdown"
+```
+
+A list callback yields a list in the helper, even with one item. Existing
+single-item callbacks still yield one struct with the route's URI and MIME type.
+An empty list means an existing resource has no contents; do not use it to
+represent a missing resource.

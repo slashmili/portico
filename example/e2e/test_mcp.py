@@ -141,8 +141,8 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertIsNotNone(client.server_capabilities.resources)
                 listing = await client.list_resources()
-                self.assertEqual(len(listing.resources), 2)
-                resource = listing.resources[0]
+                self.assertEqual(len(listing.resources), 3)
+                resource = next(item for item in listing.resources if str(item.uri) == "company://handbook")
                 self.assertEqual(str(resource.uri), "company://handbook")
                 self.assertEqual(resource.name, "handbook")
                 self.assertEqual(resource.description, "A sample company handbook.")
@@ -165,6 +165,20 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(MCPError) as caught:
                     await client.read_resource("company://missing")
                 self.assertEqual(caught.exception.error.code, -32602)
+
+    async def test_multiple_resource_contents(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                listing = await client.list_resources()
+                directory = next(item for item in listing.resources if str(item.uri) == "company://docs")
+                self.assertEqual(directory.mime_type, "inode/directory")
+                result = await client.read_resource("company://docs")
+                self.assertEqual((result.cache_scope, result.ttl_ms), ("private", 0))
+                self.assertEqual(
+                    [(str(item.uri), item.text, item.mime_type) for item in result.contents],
+                    [("company://docs/readme", "Welcome", "text/plain"),
+                     ("company://docs/guide", "# Getting started", "text/markdown")],
+                )
 
     async def test_binary_resource(self):
         async with asyncio.timeout(15):

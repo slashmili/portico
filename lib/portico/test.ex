@@ -175,10 +175,11 @@ defmodule Portico.Test do
 
   Accepts a server module or test context and an optional `assigns:` override.
   Returns `{:ok, %Portico.Resource{}}` with the requested URI and declared MIME type,
-  or `{:error, reason}`. Callback exceptions remain visible in tests.
+  a list callback returns `{:ok, [content]}` preserving each item's URI/MIME type.
+  Failures return `{:error, reason}`. Callback exceptions remain visible in tests.
   """
   @spec read_resource(module() | Context.t(), String.t(), keyword()) ::
-          {:ok, Portico.Resource.t()} | {:error, term()}
+          {:ok, Portico.Resource.t() | [Portico.Resource.t()]} | {:error, term()}
   def read_resource(target, uri, options \\ [])
 
   def read_resource(%Context{} = context, uri, options) do

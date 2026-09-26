@@ -30,10 +30,14 @@ defmodule Portico.Resource do
   sanitized internal error over HTTP. Treat decoded values as untrusted input;
   an encoded slash becomes a slash, not another routing segment.
 
-  This slice returns one UTF-8 text or binary item per read. The requested concrete URI and MIME
-  type are supplied by Portico, overriding those fields in callback content.
+  Return a single content struct or a list of content structs. For a single item,
+  Portico supplies the requested URI and declared MIME type, overriding callback
+  metadata. For lists, every item requires its own absolute URI; MIME type is
+  optional per item and does not inherit the route's MIME type. Order is preserved.
+  An empty list represents an existing resource with no contents, not a missing resource.
+  Invalid items reject the entire read with `:invalid_resource` in test helpers.
   Use `blob/1` for raw bytes; the protocol encodes them as base64.
-  Multiple contents, elicitation during reads and
+  Elicitation during reads and
   subscriptions are not implemented yet. Listings and reads use private caching
   with zero TTL. Catalogs are static and are not filtered by caller identity.
   """
@@ -45,25 +49,60 @@ defmodule Portico.Resource do
           uri: String.t() | nil,
           mime_type: String.t() | nil
         }
-  @callback read(Portico.Request.t()) :: {:ok, t()} | {:error, term()}
+  @callback read(Portico.Request.t()) :: {:ok, t() | [t()]} | {:error, term()}
 
-  @doc "Builds UTF-8 text content, returning an error tuple for invalid values."
-  @spec text(String.t()) :: {:ok, t()} | {:error, :invalid_text}
-  def text(value) when is_binary(value) do
-    if String.valid?(value), do: {:ok, %__MODULE__{text: value}}, else: {:error, :invalid_text}
-  end
-
-  def text(_), do: {:error, :invalid_text}
+  @type content_error ::
+          :invalid_text | :invalid_blob | :invalid_options | :invalid_uri | :invalid_mime_type
 
   @doc """
-  Builds binary content from raw bytes, returning an error tuple for other values.
+  Builds UTF-8 text content. Optional `:uri` must be an absolute URI and
+  `:mime_type` a UTF-8 string. Unknown or duplicate options return an error.
+  """
+  @spec text(String.t(), keyword()) :: {:ok, t()} | {:error, content_error()}
+  def text(value, options \\ [])
+
+  def text(value, options) when is_binary(value) do
+    if String.valid?(value),
+      do: with_metadata(%__MODULE__{text: value}, options),
+      else: {:error, :invalid_text}
+  end
+
+  def text(_, _), do: {:error, :invalid_text}
+
+  @doc """
+  Builds binary content from raw bytes. Accepts the same metadata options as text/2.
 
   The struct stores raw bytes in `blob`, including empty binaries. Portico encodes
   them as base64 only in protocol responses. Do not base64-encode the input.
   """
-  @spec blob(binary()) :: {:ok, t()} | {:error, :invalid_blob}
-  def blob(value) when is_binary(value), do: {:ok, %__MODULE__{blob: value}}
-  def blob(_), do: {:error, :invalid_blob}
+  @spec blob(binary(), keyword()) :: {:ok, t()} | {:error, content_error()}
+  def blob(value, options \\ [])
+
+  def blob(value, options) when is_binary(value),
+    do: with_metadata(%__MODULE__{blob: value}, options)
+
+  def blob(_, _), do: {:error, :invalid_blob}
+
+  defp with_metadata(content, options) do
+    cond do
+      not Keyword.keyword?(options) ->
+        {:error, :invalid_options}
+
+      length(Keyword.keys(options)) != length(Enum.uniq(Keyword.keys(options))) or
+          Enum.any?(Keyword.keys(options), &(&1 not in [:uri, :mime_type])) ->
+        {:error, :invalid_options}
+
+      Keyword.has_key?(options, :uri) and not valid_uri?(options[:uri]) ->
+        {:error, :invalid_uri}
+
+      Keyword.has_key?(options, :mime_type) and
+          not (is_binary(options[:mime_type]) and String.valid?(options[:mime_type])) ->
+        {:error, :invalid_mime_type}
+
+      true ->
+        {:ok, %{content | uri: options[:uri], mime_type: options[:mime_type]}}
+    end
+  end
 
   @doc false
   def valid_uri?(value) when is_binary(value) do

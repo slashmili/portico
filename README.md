@@ -127,8 +127,9 @@ not need to match the output schema. Try the example's `summarize` tool.
 Text and binary resources support static URIs and templates with whole path variables, with
 a `read_resource` test helper. See the example handbook and handbook-section resources.
 
-Only MCP **2026-07-28** is implemented. Multi-content resource reads,
-prompts, subscriptions, stdio,
+Resource reads can return one item or a list with per-item URI and MIME metadata.
+
+Only MCP **2026-07-28** is implemented. Prompts, subscriptions, stdio,
 and legacy protocol versions are outside the current scope.
 Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.
 The host application owns authentication, authorization, and rate limiting.

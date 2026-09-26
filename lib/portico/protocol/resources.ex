@@ -66,6 +66,9 @@ defmodule Portico.Protocol.Resources do
             {:error, :invalid_resource}
         end
 
+      {:ok, values} when is_list(values) ->
+        encode_contents(values)
+
       {:error, reason} ->
         {:callback_error, reason}
 
@@ -74,19 +77,51 @@ defmodule Portico.Protocol.Resources do
     end
   end
 
-  defp encode_content(%Resource{text: text, blob: nil}) when is_binary(text) do
-    case Resource.text(text) do
-      {:ok, content} -> {:ok, content, %{"text" => text}}
-      {:error, _} -> {:error, :invalid_resource}
+  defp encode_contents(values) do
+    Enum.reduce_while(values, {:ok, [], []}, fn
+      %Resource{} = value, {:ok, contents, fields} ->
+        options = [uri: value.uri]
+
+        options =
+          if is_nil(value.mime_type), do: options, else: options ++ [mime_type: value.mime_type]
+
+        case encode_content(value, options) do
+          {:ok, content, payload} ->
+            field =
+              payload |> Map.put("uri", content.uri) |> optional("mimeType", content.mime_type)
+
+            {:cont, {:ok, [content | contents], [field | fields]}}
+
+          _ ->
+            {:halt, {:error, :invalid_resource}}
+        end
+
+      _, _ ->
+        {:halt, {:error, :invalid_resource}}
+    end)
+    |> case do
+      {:ok, contents, fields} ->
+        {:ok, Enum.reverse(contents),
+         %{"contents" => Enum.reverse(fields), "cacheScope" => "private", "ttlMs" => 0}}
+
+      error ->
+        error
     end
   end
 
-  defp encode_content(%Resource{text: nil, blob: blob}) when is_binary(blob) do
-    {:ok, content} = Resource.blob(blob)
-    {:ok, content, %{"blob" => Base.encode64(blob)}}
+  defp encode_content(value, options \\ [])
+
+  defp encode_content(%Resource{text: text, blob: nil}, options) when is_binary(text) do
+    with {:ok, content} <- Resource.text(text, options),
+         do: {:ok, content, %{"text" => text}}
   end
 
-  defp encode_content(_), do: {:error, :invalid_resource}
+  defp encode_content(%Resource{text: nil, blob: blob}, options) when is_binary(blob) do
+    with {:ok, content} <- Resource.blob(blob, options),
+         do: {:ok, content, %{"blob" => Base.encode64(blob)}}
+  end
+
+  defp encode_content(_, _), do: {:error, :invalid_resource}
 
   defp optional(map, _key, nil), do: map
   defp optional(map, key, value), do: Map.put(map, key, value)

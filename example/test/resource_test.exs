@@ -1,6 +1,16 @@
 defmodule PorticoExample.ResourceTest do
   use Portico.Test, server: PorticoExample.MCP, async: true
 
+  test "reads multiple documents", %{mcp: mcp} do
+    {:ok, [readme, guide]} = read_resource mcp, "company://docs"
+
+    assert {readme.uri, readme.text, readme.mime_type} ==
+             {"company://docs/readme", "Welcome", "text/plain"}
+
+    assert {guide.uri, guide.text, guide.mime_type} ==
+             {"company://docs/guide", "# Getting started", "text/markdown"}
+  end
+
   test "reads raw bytes", %{mcp: mcp} do
     {:ok, content} = read_resource mcp, "company://sample"
     assert content.blob == <<0, 1, 2, 255>>
