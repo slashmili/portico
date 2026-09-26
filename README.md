@@ -124,7 +124,17 @@ mix test --warnings-as-errors --cover
 mix format --check-formatted
 ```
 
+Generate the API documentation locally with `mix docs --warnings-as-errors`, then
+open `doc/index.html`. ExDoc is a development-only dependency. The
+[changelog](https://github.com/slashmili/portico/blob/HEAD/CHANGELOG.md) tracks
+unreleased changes.
+
 GitHub Actions runs these checks on pushes and pull requests, plus the example's
 Elixir and Python MCP E2E suites. Library coverage must be at least **91%**, keeping
 it above the 90% target. Local asdf installs and CI share the Elixir/Erlang versions in
 [.tool-versions](https://github.com/slashmili/portico/blob/HEAD/.tool-versions). CI uses Python 3.14. See [the workflow](https://github.com/slashmili/portico/blob/HEAD/.github/workflows/ci.yml).
+
+## License
+
+MIT — see [LICENSE](https://github.com/slashmili/portico/blob/HEAD/LICENSE).
+Copyright (c) 2026 Portico contributors.
