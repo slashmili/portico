@@ -1,12 +1,12 @@
 defmodule Portico.Elicitation do
   @moduledoc """
-  Default verification for elicitation continuations.
+  Default verification for elicitation continuations and shared input-token signing.
 
   Configure a runtime key of at least 32 bytes per server:
 
       config :portico, MyApp.MCP, elicitation_key: System.fetch_env!("ELICITATION_KEY")
 
-  Continuations expire after five minutes and bind the form or URL and application state
+  Continuations expire after five minutes and bind the form, URL or sampling request and application state
   to the server and either tool/arguments or resource route/requested URI. They are signed, not encrypted or
   single-use. Keep secrets out of state. Changing the key invalidates existing
   tokens; instances sharing a key can resume each other's tokens.
@@ -16,6 +16,10 @@ defmodule Portico.Elicitation do
   or `{:error, reason}`. It can call `Portico.Elicitation.verify/2` then enforce
   identity or application policy. Portico always checks the signed input envelope
   independently before validating answers, even with a custom verifier.
+
+  Sampling uses this same key and signed envelope but does not invoke the
+  elicitation-specific custom verifier. Sampling handlers check application
+  authorization using fresh request assigns in `handle_input/3`.
 
   There is no automatic user authentication. Applications bind state to their
   authenticated identity and enforce that binding in the custom verifier.

@@ -52,7 +52,8 @@ defmodule Portico.Transport.SSE do
 
             finish(conn, response)
 
-          {:input_error, reason, conn} when reason in [:form_not_supported, :url_not_supported] ->
+          {:input_error, reason, conn}
+          when reason in [:form_not_supported, :url_not_supported, :sampling_not_supported] ->
             finish(conn, Error.response(reason, execution.request.id))
 
           {:error, reason, conn} ->

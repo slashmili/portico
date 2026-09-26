@@ -220,3 +220,37 @@ This slice supports resource updates only. Catalog-change flags are omitted from
 the acknowledgement. There is no retained history or replay; reconnect and reread.
 Applications own identity checks, event sources, subscriber limits and network
 write timeouts. See the node-local Registry demonstration in `example/`.
+
+## Text sampling
+
+A tool can ask the client's model for a text generation:
+
+```elixir
+def call(%{"text" => text}, _request) do
+  {:ok, input} = Portico.Input.sample("Summarize this:\n#{text}", max_tokens: 200)
+  {:ok, input, "summarize:v1"}
+end
+
+def handle_input({:sample, %{text: text}}, "summarize:v1", _request) do
+  {:ok, result} = Portico.Result.text(text)
+  {:ok, result}
+end
+```
+
+The client must advertise `sampling`. Portico returns `sampling/createMessage`
+inside `inputRequests`; the client runs its model and retries the tool call with
+`inputResponses`. The answer includes `text`, `model` and optional `stop_reason`.
+No server process waits between requests, and a declined request may never retry.
+
+This initial slice supports tools with one user text prompt and one text answer.
+Constructors return error tuples. Missing capability returns `-32021`; malformed
+answers return `-32602`. Missing answers reissue the input. The client controls
+model selection and must respect the positive `max_tokens` limit.
+
+Continuations use the existing per-server `elicitation_key` and five-minute expiry.
+Tokens bind the sampling request and state to the server, tool and arguments.
+They are signed, not encrypted or single-use. Elicitation-specific custom verifiers
+remain limited to forms/URLs; check fresh request assigns in the sampling handler
+for application authorization. Sampling is deprecated but retained in MCP
+2026-07-28; Portico does not add support for older protocol versions.
+See the separate `summarize_text` example and its Python sampling callback.

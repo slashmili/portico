@@ -122,6 +122,14 @@ defmodule Portico.Test do
   completion. `timeout:` bounds streaming work (default 5,000 milliseconds);
   expiry stops the task and returns `{:error, :timeout}`.
 
+  Sampling calls return `{:ok, %Portico.Input{mode: :sample}, signed_state}`.
+  Declare `%{"sampling" => %{}}` in client capabilities. Retry with the same
+  arguments, `request_state: signed_state`, and
+  `input_responses: %{"sample" => %{"role" => "assistant", "model" => "test",
+  "content" => %{"type" => "text", "text" => "Summary"}}}`. Optional
+  `"stopReason"` is forwarded as `:stop_reason`. Missing sampling support returns
+  `{:error, :sampling_not_supported}`. These helpers never call a model.
+
   URL calls return `{:ok, %Portico.Input{mode: :url}, signed_state}`. Declare
   `%{"elicitation" => %{"url" => %{}}}` in client capabilities and retry with
   `request_state: signed_state, input_responses: %{"url" => %{"action" => "accept"}}`.

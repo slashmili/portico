@@ -558,7 +558,7 @@ are objects; sampling's optional `context` and `tools` fields are objects too.
 `experimental` and `extensions` map names to settings objects. Extension names
 require a prefix, such as `com.example/feature`; experimental names are opaque.
 Unknown capabilities and settings are preserved. Valid declarations do not enable
-sampling, roots, or extensions in Portico; malformed shapes return HTTP 400 / -32602.
+roots or extensions in Portico; sampling is implemented separately below. Malformed shapes return HTTP 400 / -32602.
 
 
 ## URL elicitation: approve a report in the browser
@@ -1158,3 +1158,57 @@ callback process's registration when it exits. This demo delivers events on one
 BEAM node; a distributed host can use Phoenix.PubSub instead. The server uses `Portico.Subscription.send({:resource_updated, uri})` inside
 `handle_info/2`, then returns `{:noreply, state}`. The callbacks live in `lib/portico_example/mcp.ex`. Python E2E checks acknowledgement, notification,
 reread and reconnect; an Elixir HTTP test verifies cleanup after a socket closes.
+
+## Text sampling: summarize_text
+
+`summarize_text` asks the MCP client's model to summarize supplied text. It is
+separate from `summarize`, which computes numeric statistics. Portico does not
+call a model provider: the client owns model access and approval.
+
+The tool calls `Portico.Input.sample(prompt, max_tokens: 200)` and returns
+`{:ok, input, "summarize:v1"}`. When the client retries with its generated answer,
+`handle_input({:sample, answer}, state, request)` receives `answer.text`,
+`answer.model` and optional `answer.stop_reason`, and returns the final result.
+
+Run this using the example's Python environment. The deterministic callback
+stands in for a model, so this showcases the protocol without API credentials:
+
+```python
+import asyncio
+from mcp import Client
+from mcp.types import CreateMessageResult, TextContent
+
+async def sample(context, params):
+    print(params.messages[0].content.text)
+    print("Token limit:", params.max_tokens)
+    return CreateMessageResult(
+        role="assistant",
+        model="demo-model",
+        content=TextContent(type="text", text="Portico exposes MCP tools."),
+        stopReason="endTurn",
+    )
+
+async def main():
+    async with Client("http://localhost:4000/mcp", sampling_callback=sample) as client:
+        result = await client.call_tool("summarize_text", {
+            "text": "Portico is an Elixir library that exposes tools through MCP."
+        })
+        print(result.content[0].text)
+
+asyncio.run(main())
+```
+
+Without a sampling callback/capability, the tool returns MCP error `-32021` with
+`requiredCapabilities: {"sampling": {}}`. Clients may decline and stop without
+retrying; Portico retains no waiting task. The existing `ELICITATION_KEY` signs
+sampling continuations too; they expire after five minutes and are invalidated
+when the key changes. The elicitation-specific custom verifier is not invoked.
+
+The first slice supports one text prompt and one text answer, including a
+one-element text content array. Model preferences, tool use during sampling,
+images/audio and resource/prompt sampling are not implemented. Sampling is
+supported in the selected MCP revision despite its deprecation.
+
+Python E2E covers the complete request/retry flow, missing capability and client
+refusal. Elixir tests additionally cover malformed answers, tampering, expired
+state, binding to tool arguments, and sampling from streaming callbacks.

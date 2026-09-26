@@ -12,6 +12,7 @@ defmodule PorticoExample.MCP do
   tool "greet", PorticoExample.Tools.Greet
   tool "set_status", PorticoExample.Tools.SetStatus
   tool "summarize", PorticoExample.Tools.Summarize
+  tool "summarize_text", PorticoExample.Tools.SummarizeText
   resource "company://docs", PorticoExample.Resources.Documents
   resource "company://handbook", PorticoExample.Resources.Handbook
   resource "company://reviewed-report", PorticoExample.Resources.ReviewedReport

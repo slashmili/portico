@@ -82,6 +82,24 @@ defmodule Portico.Tool do
   failures instead. Reasons may be any Elixir term; avoid secrets in reasons
   because they appear in server logs.
 
+  For text sampling, build `Portico.Input.sample(prompt, max_tokens: 200)` and
+  return `{:ok, input, application_state}`. The client runs its model and retries
+  the original tool call; `handle_input/3` receives
+  `{:sample, %{text: text, model: model}}`, with optional `:stop_reason`.
+  Requires the client's `sampling` capability; missing support returns
+  `{:error, :sampling_not_supported}` in tests and `-32021` over HTTP.
+  One text block is supported, either directly or in a one-element array.
+  Malformed or unsupported answers return invalid params; missing answers reissue
+  the sampling input. Streaming callbacks can return sampling inputs too.
+
+  Sampling uses the same `elicitation_key`, five-minute expiry and binding to
+  server/tool/arguments, but does not run the elicitation-specific custom verifier.
+  Authorize the fresh request in `handle_input/3`; the token does not identify a
+  user. No task waits between calls. Clients may decline without retrying, so no
+  decline callback is guaranteed. Sampling is deprecated but retained in the
+  selected MCP revision. Model preferences, sampling tools and rich content are
+  outside this first slice. See `Portico.Input.sample/2`.
+
   For URL elicitation, build `Portico.Input.url(message, url: url)` and return
   `{:ok, input, application_state}`. URL replies reach `handle_input/3` as
   `:accept`, `:decline`, or `:cancel`, with no content. Acceptance is consent,
@@ -148,7 +166,7 @@ defmodule Portico.Tool do
   @doc "Runs request-scoped streaming work and returns the final result."
   @callback handle_stream(term(), Portico.Stream.t()) ::
               {:ok, Portico.Result.t()} | {:ok, Portico.Input.t(), String.t()} | {:error, term()}
-  @doc "Handles a validated elicitation reply and state returned by the elicitation verifier."
+  @doc "Handles a validated input reply and its verified application state."
   @callback handle_input(Portico.Input.answer(), term(), Portico.Request.t()) ::
               {:ok, Portico.Result.t()}
               | {:ok, Portico.Input.t(), String.t()}

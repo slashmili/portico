@@ -1,6 +1,28 @@
 defmodule PorticoExample.MCPTest do
   use Portico.Test, server: PorticoExample.MCP, async: true
 
+  test "summarize_text requests the client model and resumes with its answer", %{mcp: mcp} do
+    mcp = %{mcp | client_capabilities: %{"sampling" => %{}}}
+    arguments = %{"text" => "Portico exposes MCP tools."}
+    {:ok, input, token} = call_tool mcp, "summarize_text", arguments
+    assert input.mode == :sample
+    assert input.message == "Summarize this:\nPortico exposes MCP tools."
+    assert input.max_tokens == 200
+
+    {:ok, result} =
+      call_tool mcp, "summarize_text", arguments,
+        request_state: token,
+        input_responses: %{
+          "sample" => %{
+            "role" => "assistant",
+            "model" => "test",
+            "content" => %{"type" => "text", "text" => "Portico provides tools."}
+          }
+        }
+
+    assert_text result, "Portico provides tools."
+  end
+
   test "summarize returns structured JSON with a text fallback", %{mcp: mcp} do
     for {numbers, expected} <- [
           {[2, 3, -1], %{"count" => 3, "sum" => 4}},

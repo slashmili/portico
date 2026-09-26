@@ -11,6 +11,7 @@ defmodule Portico.Protocol.Error do
           | :header_mismatch
           | :form_not_supported
           | :url_not_supported
+          | :sampling_not_supported
           | {:unsupported_protocol_version, String.t(), [String.t()]}
 
   @doc """
@@ -51,6 +52,14 @@ defmodule Portico.Protocol.Error do
   defp details(:method_not_found), do: %{"code" => -32601, "message" => "Method not found"}
   defp details(:internal_error), do: %{"code" => -32603, "message" => "Internal error"}
   defp details(:header_mismatch), do: %{"code" => -32020, "message" => "Header mismatch"}
+
+  defp details(:sampling_not_supported) do
+    %{
+      "code" => -32021,
+      "message" => "Missing required client capability",
+      "data" => %{"requiredCapabilities" => %{"sampling" => %{}}}
+    }
+  end
 
   defp details(reason) when reason in [:form_not_supported, :url_not_supported] do
     mode = if reason == :url_not_supported, do: "url", else: "form"

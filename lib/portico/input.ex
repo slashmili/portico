@@ -1,6 +1,6 @@
 defmodule Portico.Input do
   @moduledoc """
-  A form or URL requested by a tool with `{:ok, input, request_state}`.
+  A form, URL interaction, or sampling request returned by a tool with `{:ok, input, request_state}`.
 
   `form/2` validates and normalizes a flat JSON Schema with string, number,
   integer, or boolean fields, single-choice string enums, and arrays of string
@@ -9,21 +9,61 @@ defmodule Portico.Input do
   Errors return tuples.
 
   Portico protects the input and application state in an expiring signed token.
-  Accepted answers are validated against that form before `handle_input/3` runs.
+  Accepted form answers are validated against their schema before `handle_input/3` runs.
+  Sampling answers are checked for valid text and model metadata.
   Portico stores no state, schema, or waiting process between requests. The host
   application owns any browser workflow state.
   See `Portico.Elicitation` for key configuration and custom verification.
   Do not request secrets through form elicitation.
   """
-  defstruct [:message, :schema, :url, mode: :form]
+  defstruct [:message, :schema, :url, :max_tokens, mode: :form]
 
   @type t :: %__MODULE__{
           message: String.t(),
           schema: map() | nil,
           url: String.t() | nil,
-          mode: :form | :url
+          max_tokens: pos_integer() | nil,
+          mode: :form | :url | :sample
         }
-  @type answer :: {:accept, map()} | :accept | :decline | :cancel
+  @type answer :: {:accept, map()} | :accept | :decline | :cancel | {:sample, map()}
+
+  @doc """
+  Requests one text generation from the client's model.
+
+  Requires a positive integer `max_tokens:`. Returns `{:ok, input}` or an error
+  tuple. Return `{:ok, input, application_state}` from a tool; the client retries
+  with its answer, delivered to `handle_input/3` as
+  `{:sample, %{text: text, model: model}}`, with optional `:stop_reason`.
+
+  Requires the client's `sampling` capability. Supports one user text prompt and
+  one text answer (a single block or one-element array). Model preferences,
+  sampling tools, images/audio and additional context are outside this slice.
+  Sampling remains supported but deprecated in MCP 2026-07-28.
+
+  Continuations use the existing per-server `elicitation_key` and five-minute
+  expiry. The elicitation-specific custom verifier does not run for sampling;
+  check fresh request assigns in `handle_input/3` for application authorization.
+  A client may decline without retrying; there is no guaranteed decline callback.
+  """
+  @spec sample(String.t(), keyword()) :: {:ok, t()} | {:error, atom()}
+  def sample(message, options) do
+    cond do
+      not (is_binary(message) and String.valid?(message)) ->
+        {:error, :invalid_message}
+
+      not Keyword.keyword?(options) ->
+        {:error, :invalid_options}
+
+      Keyword.keys(options) != [:max_tokens] ->
+        {:error, :invalid_options}
+
+      not (is_integer(options[:max_tokens]) and options[:max_tokens] > 0) ->
+        {:error, :invalid_max_tokens}
+
+      true ->
+        {:ok, %__MODULE__{mode: :sample, message: message, max_tokens: options[:max_tokens]}}
+    end
+  end
 
   @doc """
   Builds a form from a message and a required `schema:` option.

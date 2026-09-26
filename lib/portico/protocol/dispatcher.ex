@@ -295,7 +295,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:input, _form, _state, fields} ->
         input_required(server, context.id, fields)
 
-      {:input_error, reason} when reason in [:form_not_supported, :url_not_supported] ->
+      {:input_error, reason}
+      when reason in [:form_not_supported, :url_not_supported, :sampling_not_supported] ->
         {:reply, Error.response(reason, context.id)}
 
       {:input_error, _reason} ->
@@ -316,7 +317,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:error, reason} when reason in [:unknown_tool, :invalid_params] ->
         {:reply, Error.response(:invalid_params, request.id)}
 
-      {:input_error, reason} when reason in [:form_not_supported, :url_not_supported] ->
+      {:input_error, reason}
+      when reason in [:form_not_supported, :url_not_supported, :sampling_not_supported] ->
         {:reply, Error.response(reason, request.id)}
 
       {:input_error, _reason} ->
@@ -368,7 +370,8 @@ defmodule Portico.Protocol.Dispatcher do
       {:ok, form, fields} ->
         {:input, form, fields["requestState"], fields}
 
-      {:error, reason} when reason in [:form_not_supported, :url_not_supported] ->
+      {:error, reason}
+      when reason in [:form_not_supported, :url_not_supported, :sampling_not_supported] ->
         {:input_error, reason}
 
       error ->
@@ -488,5 +491,5 @@ defmodule Portico.Protocol.Dispatcher do
   defp run_callback(module, arguments, request, :initial), do: module.call(arguments, request)
 
   defp run_callback(module, _arguments, request, {:resume, answer, state}),
-    do: Elicitation.resume(module, answer, state, request)
+    do: Elicitation.resume(module, answer, state, request, [:form, :url, :sample])
 end

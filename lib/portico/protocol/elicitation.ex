@@ -1,6 +1,7 @@
 defmodule Portico.Protocol.Elicitation do
   @moduledoc false
   alias Portico.Input
+  alias Portico.Protocol.Sampling
 
   def resume(module, answer, state, request, allowed_modes \\ [:form, :url]) do
     if not function_exported?(module, :handle_input, 3) do
@@ -10,7 +11,7 @@ defmodule Portico.Protocol.Elicitation do
            true <- envelope.form.mode in allowed_modes,
            :ok <- require_support(request, envelope.form.mode),
            {:ok, answer} <- match_answer(answer, envelope.form),
-           {:ok, verified_state} <- verify_input(module, state, request) do
+           {:ok, verified_state} <- verify_input(module, state, request, envelope) do
         case validate_answer(answer, envelope.form) do
           :ok -> module.handle_input(answer, verified_state, request)
           :retry -> {:ok, envelope.form, envelope.state}
@@ -29,7 +30,10 @@ defmodule Portico.Protocol.Elicitation do
     end
   end
 
-  defp verify_input(module, state, request) do
+  defp verify_input(_module, _token, _request, %{form: %Input{mode: :sample}, state: state}),
+    do: {:ok, state}
+
+  defp verify_input(module, state, request, _envelope) do
     case module.__portico_verify_input__(state, request) do
       {:ok, _} = ok -> ok
       {:error, _} = error -> error
@@ -56,6 +60,8 @@ defmodule Portico.Protocol.Elicitation do
     end
   end
 
+  def supported?(request, :sample), do: is_map(request.client_capabilities["sampling"])
+
   def supported?(request, :url) do
     case request.client_capabilities["elicitation"] do
       %{"url" => url} when is_map(url) -> true
@@ -66,8 +72,15 @@ defmodule Portico.Protocol.Elicitation do
   def require_support(request, mode) do
     if supported?(request, mode),
       do: :ok,
-      else: {:input_error, if(mode == :url, do: :url_not_supported, else: :form_not_supported)}
+      else: {:input_error, unsupported_reason(mode)}
   end
+
+  defp unsupported_reason(:sample), do: :sampling_not_supported
+  defp unsupported_reason(:url), do: :url_not_supported
+  defp unsupported_reason(:form), do: :form_not_supported
+
+  def encode(%Input{mode: :sample}, _state, %{method: method}) when method != "tools/call",
+    do: {:error, :invalid_input}
 
   def encode(%Input{} = input, state, request) do
     with {:ok, input} <- validate_input(input),
@@ -75,18 +88,13 @@ defmodule Portico.Protocol.Elicitation do
          :ok <- require_support(request, input.mode),
          {:ok, token} <- Portico.Elicitation.seal(input, state, request) do
       mode = Atom.to_string(input.mode)
-      params = %{"mode" => mode, "message" => input.message}
-
-      params =
-        if input.mode == :url,
-          do: Map.put(params, "url", input.url),
-          else: Map.put(params, "requestedSchema", input.schema)
+      input_request = input_request(input)
 
       {:ok, input,
        %{
          "resultType" => "input_required",
          "requestState" => token,
-         "inputRequests" => %{mode => %{"method" => "elicitation/create", "params" => params}}
+         "inputRequests" => %{mode => input_request}
        }}
     else
       false -> {:error, :invalid_request_state}
@@ -95,10 +103,26 @@ defmodule Portico.Protocol.Elicitation do
     end
   end
 
-  defp validate_input(%Input{mode: :form, url: nil} = input),
+  defp input_request(%Input{mode: :sample} = input), do: Sampling.input_request(input)
+
+  defp input_request(input) do
+    params = %{"mode" => Atom.to_string(input.mode), "message" => input.message}
+
+    params =
+      if input.mode == :url,
+        do: Map.put(params, "url", input.url),
+        else: Map.put(params, "requestedSchema", input.schema)
+
+    %{"method" => "elicitation/create", "params" => params}
+  end
+
+  defp validate_input(%Input{mode: :sample, schema: nil, url: nil} = input),
+    do: Input.sample(input.message, max_tokens: input.max_tokens)
+
+  defp validate_input(%Input{mode: :form, url: nil, max_tokens: nil} = input),
     do: Input.form(input.message, schema: input.schema)
 
-  defp validate_input(%Input{mode: :url, schema: nil} = input),
+  defp validate_input(%Input{mode: :url, schema: nil, max_tokens: nil} = input),
     do: Input.url(input.message, url: input.url)
 
   defp validate_input(_input), do: {:error, :invalid_input}
@@ -120,11 +144,21 @@ defmodule Portico.Protocol.Elicitation do
 
   defp answer({:ok, responses}, state) do
     if object?(responses) do
-      case {Map.fetch(responses, "form"), Map.fetch(responses, "url")} do
-        {{:ok, _}, {:ok, _}} -> {:error, :invalid_params}
-        {{:ok, reply}, :error} -> decode(reply, state)
-        {:error, {:ok, reply}} -> decode_url(reply, state)
-        {:error, :error} -> {:resume, :missing, state}
+      case Map.take(responses, ["form", "url", "sample"]) |> Map.to_list() do
+        [{"form", reply}] ->
+          decode(reply, state)
+
+        [{"url", reply}] ->
+          decode_url(reply, state)
+
+        [{"sample", reply}] ->
+          with {:ok, answer} <- Sampling.decode(reply), do: {:resume, answer, state}
+
+        [] ->
+          {:resume, :missing, state}
+
+        _ ->
+          {:error, :invalid_params}
       end
     else
       {:error, :invalid_params}
@@ -147,6 +181,9 @@ defmodule Portico.Protocol.Elicitation do
   defp decode_url(_, _), do: {:error, :invalid_params}
 
   def match_answer(:missing, _input), do: {:ok, :missing}
+  def match_answer({:sample, _} = answer, %Input{mode: :sample}), do: {:ok, answer}
+  def match_answer({:sample, _}, _input), do: {:input_error, :invalid_params}
+  def match_answer(_answer, %Input{mode: :sample}), do: {:input_error, :invalid_params}
   def match_answer({:url, action}, %Input{mode: :url}), do: {:ok, action}
   def match_answer({:url, _}, _input), do: {:input_error, :invalid_params}
   def match_answer(_answer, %Input{mode: :url}), do: {:input_error, :invalid_params}

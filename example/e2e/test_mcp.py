@@ -19,7 +19,7 @@ import urllib.error
 from jsonschema import Draft202012Validator
 from mcp import Client
 from mcp.shared.exceptions import MCPError
-from mcp.types import TextContent, ElicitResult, PromptReference, ResourceTemplateReference
+from mcp.types import CreateMessageResult, ErrorData, TextContent, ElicitResult, PromptReference, ResourceTemplateReference
 
 URL = os.environ.get("MCP_URL")
 PROTOCOL_VERSION = "2026-07-28"
@@ -411,7 +411,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add", "approve_report", "choose_color", "choose_colors", "count", "greet", "set_status", "summarize"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "approve_report", "choose_color", "choose_colors", "count", "greet", "set_status", "summarize", "summarize_text"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)
@@ -436,6 +436,46 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                     "required": ["a", "b"],
                     "additionalProperties": False,
                 })
+
+    async def test_summarize_text_sampling(self):
+        seen = []
+
+        async def sample(context, params):
+            seen.append(params)
+            self.assertEqual(params.max_tokens, 200)
+            self.assertEqual(params.include_context, "none")
+            self.assertEqual(len(params.messages), 1)
+            self.assertEqual(params.messages[0].role, "user")
+            self.assertEqual(params.messages[0].content.text, "Summarize this:\nPortico exposes MCP tools.")
+            return CreateMessageResult(role="assistant", model="deterministic-test",
+                content=TextContent(type="text", text="Portico provides tools."), stopReason="endTurn")
+
+        async with asyncio.timeout(15):
+            async with Client(URL, sampling_callback=sample) as client:
+                result = await client.call_tool("summarize_text", {"text": "Portico exposes MCP tools."})
+                self.assertEqual(result.content[0].text, "Portico provides tools.")
+                self.assertFalse(result.is_error)
+                self.assertEqual(len(seen), 1)
+
+    async def test_summarize_text_requires_sampling(self):
+        async with asyncio.timeout(15):
+            async with Client(URL) as client:
+                with self.assertRaises(MCPError) as raised:
+                    await client.call_tool("summarize_text", {"text": "Hello"})
+                self.assertEqual(raised.exception.code, -32021)
+                self.assertEqual(raised.exception.data, {"requiredCapabilities": {"sampling": {}}})
+
+    async def test_summarize_text_client_declines(self):
+        async def decline(context, params):
+            return ErrorData(code=-1, message="Sampling declined")
+
+        async with asyncio.timeout(15):
+            async with Client(URL, sampling_callback=decline) as client:
+                with self.assertRaises(MCPError):
+                    await client.call_tool("summarize_text", {"text": "Hello"})
+                # Declining leaves no waiting server task; ordinary calls still work.
+                result = await client.call_tool("add", {"a": 1, "b": 2})
+                self.assertEqual(result.content[0].text, "3")
 
     async def test_summarize(self):
         async with asyncio.timeout(15):
