@@ -139,7 +139,7 @@ The first slice returns one user-role text message; it does not call an LLM.
 Optional `complete/3` callbacks suggest prompt arguments and resource-template
 variables. Use `Portico.Test.complete/5` to test them.
 
-Only MCP **2026-07-28** is implemented. Subscriptions, stdio,
+Only MCP **2026-07-28** is implemented. Catalog-change subscriptions, stdio,
 and legacy protocol versions are outside the current scope.
 Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.
 The host application owns authentication, authorization, and rate limiting.
@@ -169,3 +169,54 @@ it above the 90% target. Local asdf installs and CI share the Elixir/Erlang vers
 
 MIT — see [LICENSE](https://github.com/slashmili/portico/blob/HEAD/LICENSE).
 Copyright (c) 2026 Portico contributors.
+
+## Resource subscriptions
+
+Implement these callbacks in the server module to support `subscriptions/listen`:
+
+```elixir
+@impl true
+def handle_subscribe(filter, request) do
+  # Authentication and topic authorization belong to your application.
+  topic = "reports:#{request.assigns.current_user.id}"
+  accepted = Enum.filter(filter.resource_subscriptions, &(&1 == "company://report"))
+  if accepted != [], do: Phoenix.PubSub.subscribe(MyApp.PubSub, topic)
+  {:ok, %{resource_subscriptions: accepted}, %{}}
+end
+
+@impl true
+def handle_info({:report_changed, uri}, state) do
+  :ok = Portico.Subscription.send({:resource_updated, uri})
+  {:noreply, state}
+end
+
+def handle_info(_message, state), do: {:noreply, state}
+```
+
+`Portico.Subscription.send/1` runs inside `handle_info/2` and returns `:ok` or an
+error tuple. It uses the current callback process's subscription; spawned tasks
+cannot send directly. Valid updates outside the accepted URI filter are ignored.
+
+Each HTTP subscription has its own task and application state. The callbacks run
+in that task; the server module itself is not a GenServer. Portico acknowledges
+with the accepted filter, sends updates only for accepted URIs, and stops the
+task on disconnect. Your event source must remove registrations when subscribers
+exit, as Phoenix.PubSub and Registry do. No new dependency is required by Portico.
+
+The callback receives `%{resource_subscriptions: [uri]}` and fresh request assigns.
+Use them to authorize access before subscribing. Return
+`{:ok, %{resource_subscriptions: accepted_uris}, state}` with a subset of the
+requested URIs; return an empty list when none are supported. Portico rejects
+unrequested URIs or malformed filters and removes duplicates. Server-wide
+subscription support does not mean every resource accepts subscriptions.
+A notification contains the URI;
+the client reads the resource again to obtain content. Return `{:stop, :normal, state}`
+for a graceful final response, or `{:error, reason}` for a sanitized protocol error.
+The default subscription lifetime is unlimited; configure `subscription_timeout:`
+on `Portico.Plug` in milliseconds to bound it. Tool `stream_timeout` is independent.
+Heartbeats detect disconnects even when application callbacks are blocked.
+
+This slice supports resource updates only. Catalog-change flags are omitted from
+the acknowledgement. There is no retained history or replay; reconnect and reread.
+Applications own identity checks, event sources, subscriber limits and network
+write timeouts. See the node-local Registry demonstration in `example/`.

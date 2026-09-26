@@ -74,6 +74,32 @@ def setUpModule():
 
 
 class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
+    async def test_unsupported_resource_subscription_is_not_acknowledged(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                async with client.listen(resource_subscriptions=["company://handbook"]) as subscription:
+                    self.assertFalse(subscription.honored.resource_subscriptions)
+
+    async def test_resource_subscription(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                self.assertTrue(client.server_capabilities.resources.subscribe)
+                async with client.listen(resource_subscriptions=["company://status", "company://handbook"], tools_list_changed=True) as subscription:
+                    self.assertEqual([str(uri) for uri in subscription.honored.resource_subscriptions], ["company://status"])
+                    self.assertFalse(subscription.honored.tools_list_changed)
+                    result = await client.call_tool("set_status", {"text": "E2E running"})
+                    self.assertEqual(result.content[0].text, "Status updated.")
+                    event = await anext(subscription)
+                    self.assertEqual(str(event.uri), "company://status")
+                    resource = await client.read_resource("company://status")
+                    self.assertEqual(resource.contents[0].text, "E2E running")
+                # A disconnected subscription does not prevent later calls or a fresh listen.
+                async with client.listen(resource_subscriptions=["company://status"]) as fresh:
+                    await client.call_tool("set_status", {"text": "Ready"})
+                    event = await anext(fresh)
+                    self.assertEqual(str(event.uri), "company://status")
+
+
     async def test_approve_report_browser_completion(self):
         await self._assert_report_browser_completion()
 
@@ -232,7 +258,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertIsNotNone(client.server_capabilities.resources)
                 listing = await client.list_resources()
-                self.assertEqual(len(listing.resources), 5)
+                self.assertEqual(len(listing.resources), 6)
                 resource = next(item for item in listing.resources if str(item.uri) == "company://handbook")
                 self.assertEqual(str(resource.uri), "company://handbook")
                 self.assertEqual(resource.name, "handbook")
@@ -385,7 +411,7 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
             async with Client(URL, read_timeout_seconds=10) as client:
                 self.assertEqual(client.protocol_version, PROTOCOL_VERSION)
                 listing = await client.list_tools()
-                self.assertEqual([tool.name for tool in listing.tools], ["add", "approve_report", "choose_color", "choose_colors", "count", "greet", "summarize"])
+                self.assertEqual([tool.name for tool in listing.tools], ["add", "approve_report", "choose_color", "choose_colors", "count", "greet", "set_status", "summarize"])
                 self.assertIsNone(listing.next_cursor)
                 self.assertEqual(listing.cache_scope, "private")
                 self.assertEqual(listing.ttl_ms, 0)

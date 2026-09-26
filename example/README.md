@@ -700,7 +700,7 @@ invalid declarations fail at compilation.
 For a single text or binary item, Portico supplies the concrete requested URI
 and declared MIME type. List reads preserve each item's URI and MIME type. Resources are listed in URI order;
 listing and reading use private caching with zero TTL. There is no pagination;
-cursors are rejected. Subscriptions remain a future slice. Python E2E checks both catalogs, text content, decoded
+cursors are rejected. Resource-update subscriptions are shown below. Python E2E checks both catalogs, text content, decoded
 template variables and missing URI errors.
 
 ## Resource templates
@@ -1127,3 +1127,34 @@ valid argument names. Without any completion callbacks, the method returns
 `-32602`; malformed results and callback failures become sanitized `-32603`
 over HTTP. Helpers preserve callback errors and expose application exceptions.
 Host applications remain responsible for authorization and request rate limits.
+
+## Resource subscription demo
+
+Read `company://status`, open a subscription to that URI, then call `set_status`
+with `{"text": "Working"}` from another request. The notification carries the URI;
+read it again for the new text. Only `company://status` is accepted by `handle_subscribe/2`; other requested URIs
+are omitted from the acknowledgement. The demo uses an application-owned Agent and
+Registry shared by all callers. It has no per-user status or persistence.
+
+With the Python environment installed as described above:
+
+```python
+import asyncio
+from mcp import Client
+
+async def main():
+    async with Client("http://localhost:4000/mcp") as client:
+        async with client.listen(resource_subscriptions=["company://status"]) as subscription:
+            await client.call_tool("set_status", {"text": "Working"})
+            event = await anext(subscription)
+            print(event.uri)
+            print(await client.read_resource(str(event.uri)))
+
+asyncio.run(main())
+```
+
+Leaving `client.listen` closes the HTTP subscription. Registry removes the
+callback process's registration when it exits. This demo delivers events on one
+BEAM node; a distributed host can use Phoenix.PubSub instead. The server uses `Portico.Subscription.send({:resource_updated, uri})` inside
+`handle_info/2`, then returns `{:noreply, state}`. The callbacks live in `lib/portico_example/mcp.ex`. Python E2E checks acknowledgement, notification,
+reread and reconnect; an Elixir HTTP test verifies cleanup after a socket closes.

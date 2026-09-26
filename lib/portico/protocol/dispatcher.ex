@@ -28,7 +28,8 @@ defmodule Portico.Protocol.Dispatcher do
   coercion; schema failures return a completed tool error. Test helpers use `call_tool_request/3`
   for the same validation and execution with exceptions left visible to tests.
   """
-  @spec dispatch(module(), term(), map()) :: {:reply, map()} | {:stream, map()} | :no_response
+  @spec dispatch(module(), term(), map()) ::
+          {:reply, map()} | {:stream, map()} | {:subscription, map()} | :no_response
   def dispatch(server, message, assigns \\ %{}) when is_map(assigns) do
     case prepare(message, assigns) do
       {:ok, message, context} -> dispatch_method(server, message, context)
@@ -250,17 +251,31 @@ defmodule Portico.Protocol.Dispatcher do
     _ -> {:reply, Error.response(:internal_error, context.id)}
   end
 
+  defp dispatch_method(server, %{"method" => "subscriptions/listen", "params" => params}, context) do
+    case Portico.Subscription.prepare(server, params, context) do
+      {:ok, execution} -> {:subscription, execution}
+      {:error, reason} -> {:reply, Error.response(reason, context.id)}
+    end
+  end
+
   defp dispatch_method(_server, request, _context) do
     {:reply, Error.response(:method_not_found, request["id"])}
   end
 
   defp capabilities(server) do
     capabilities = %{"tools" => %{}}
+    subscribe? = server.__portico__(:subscriptions)
 
     capabilities =
-      if Server.resources(server) == [] and Server.resource_templates(server) == [],
-        do: capabilities,
-        else: Map.put(capabilities, "resources", %{})
+      if Server.resources(server) == [] and Server.resource_templates(server) == [] and
+           not subscribe?,
+         do: capabilities,
+         else:
+           Map.put(
+             capabilities,
+             "resources",
+             if(subscribe?, do: %{"subscribe" => true}, else: %{})
+           )
 
     capabilities =
       if Server.prompts(server) == [],

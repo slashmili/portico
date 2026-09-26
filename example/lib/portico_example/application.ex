@@ -16,7 +16,12 @@ defmodule PorticoExample.Application do
         []
       end
 
-    Supervisor.start_link([PorticoExample.ReportApprovals | children],
+    Supervisor.start_link(
+      [
+        {Registry, keys: :duplicate, name: PorticoExample.Events},
+        PorticoExample.Status,
+        PorticoExample.ReportApprovals | children
+      ],
       strategy: :one_for_one,
       name: PorticoExample.Supervisor
     )

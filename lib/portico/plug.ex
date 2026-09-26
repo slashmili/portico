@@ -23,6 +23,9 @@ defmodule Portico.Plug do
     * `:stream_timeout` — maximum streaming execution time in milliseconds,
       default 30,000. Must be a positive integer. Network write timeouts belong
       to the host HTTP server.
+    * `:subscription_timeout` — maximum subscription lifetime in milliseconds,
+      default `:infinity`. A positive integer gracefully closes the subscription
+      after that interval. Independent of tool `:stream_timeout`.
     * `:filter_parameters` — additional parameter key fragments to redact in
       logs, default `[]`. Matching is case-insensitive and recursive through
       maps and lists. Keys containing `password`, `secret`, `token`,
@@ -75,6 +78,7 @@ defmodule Portico.Plug do
         assigns: [],
         max_body_bytes: 1_000_000,
         stream_timeout: 30_000,
+        subscription_timeout: :infinity,
         filter_parameters: []
       )
 
@@ -95,6 +99,14 @@ defmodule Portico.Plug do
 
     unless is_integer(options[:stream_timeout]) and options[:stream_timeout] > 0,
       do: raise(ArgumentError, "expected :stream_timeout to be a positive integer")
+
+    unless options[:subscription_timeout] == :infinity or
+             (is_integer(options[:subscription_timeout]) and options[:subscription_timeout] > 0),
+           do:
+             raise(
+               ArgumentError,
+               "expected :subscription_timeout to be :infinity or a positive integer"
+             )
 
     unless is_list(options[:filter_parameters]) and
              Enum.all?(
@@ -225,6 +237,9 @@ defmodule Portico.Plug do
 
           {:reply, response} ->
             reply(conn, response)
+
+          {:subscription, execution} ->
+            Portico.Transport.Subscription.call(conn, execution, options.subscription_timeout)
 
           {:stream, execution} ->
             Portico.Transport.SSE.call(conn, execution, options.stream_timeout)

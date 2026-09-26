@@ -20,7 +20,42 @@ defmodule Portico.Server do
   Resource modules use `Portico.Resource`; declare them with `resource/2` or `resource_template/2` and
   test reads with `Portico.Test.read_resource/3`. Prompt modules use
   `Portico.Prompt`; declare them with `prompt/2` and test with `Portico.Test.get_prompt/4`.
+
+  ## Resource subscriptions
+
+  Define both `handle_subscribe/2` and `handle_info/2` to advertise resource
+  subscriptions. Portico starts one linked task per open `subscriptions/listen`
+  HTTP response, invoking these callbacks in that task. The server module is not
+  itself a GenServer. The filter is `%{resource_subscriptions: [uri]}` and the
+  request contains fresh application assigns. Authenticate and authorize in
+  `handle_subscribe/2` before registering with your application's event source.
+  Return `{:ok, %{resource_subscriptions: accepted_uris}, state}` or
+  `{:error, reason}`. Accepted URIs must be a subset of those requested; an empty
+  list accepts none. Duplicates are removed. Invalid filters return an internal
+  error before acknowledgement. Only accepted URIs are acknowledged and emitted.
+
+  `handle_info/2` receives messages from that event source. Call
+  `Portico.Subscription.send({:resource_updated, uri})` to emit an update, then
+  return `{:noreply, state}` to keep waiting. Return `{:stop, :normal, state}` to
+  close gracefully. Invalid returns,
+  `{:error, reason}` and callback exceptions become sanitized protocol errors.
+  Only accepted URIs are emitted; clients reread their contents after notification.
+
+  Registration must belong to the callback process (for example, Registry or
+  Phoenix.PubSub). It is killed on disconnect or timeout; use an event source
+  that removes registrations when its process exits. There is no terminate
+  callback, retained history or replay. Reconnect creates fresh state. The
+  application owns authorization, resource limits and cross-node event delivery.
+  Catalog-change notifications are not supported in this slice.
   """
+
+  @callback handle_subscribe(%{resource_subscriptions: [String.t()]}, Portico.Request.t()) ::
+              {:ok, %{resource_subscriptions: [String.t()]}, term()} | {:error, term()}
+  @callback handle_info(term(), term()) ::
+              {:noreply, term()}
+              | {:stop, :normal, term()}
+              | {:error, term()}
+  @optional_callbacks handle_subscribe: 2, handle_info: 2
 
   alias Portico.Server.Compiler
 
@@ -35,6 +70,7 @@ defmodule Portico.Server do
   @doc false
   defmacro __using__(options) do
     quote do
+      @behaviour Portico.Server
       Module.register_attribute(__MODULE__, :portico_tools, accumulate: true)
       Module.register_attribute(__MODULE__, :portico_resources, accumulate: true)
       Module.register_attribute(__MODULE__, :portico_resource_templates, accumulate: true)
@@ -90,6 +126,16 @@ defmodule Portico.Server do
 
   @doc false
   defmacro __before_compile__(env) do
+    subscribe? = Module.defines?(env.module, {:handle_subscribe, 2})
+    info? = Module.defines?(env.module, {:handle_info, 2})
+
+    if subscribe? != info? do
+      raise CompileError,
+        file: env.file,
+        line: env.line,
+        description: "subscriptions require both handle_subscribe/2 and handle_info/2"
+    end
+
     info = Module.get_attribute(env.module, :portico_info)
 
     tools =
@@ -118,6 +164,7 @@ defmodule Portico.Server do
 
     quote do
       @doc false
+      def __portico__(:subscriptions), do: unquote(subscribe?)
       def __portico__(:prompts), do: unquote(Macro.escape(prompts))
       def __portico__(:resource_templates), do: unquote(Macro.escape(templates))
       def __portico__(:info), do: unquote(Macro.escape(info))
