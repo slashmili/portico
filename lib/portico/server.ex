@@ -64,7 +64,10 @@ defmodule Portico.Server do
           required(:name) => String.t(),
           required(:module) => module(),
           required(:input_schema) => map(),
-          optional(:description) => String.t()
+          optional(:description) => String.t(),
+          optional(:annotations) => %{
+            optional(:read_only | :destructive | :idempotent | :open_world) => boolean()
+          }
         }
 
   @doc false

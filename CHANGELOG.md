@@ -4,6 +4,7 @@
 
 Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
 
+- Optional tool behavior annotations with compile-time validation and MCP wire names.
 - Tool input schemas require an explicit object root at compilation, matching
   the MCP declaration contract.
 - Module-based tool declarations with compile-time JSON Schema checks and runtime

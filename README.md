@@ -259,3 +259,28 @@ remain limited to forms/URLs; check fresh request assigns in the sampling handle
 for application authorization. Sampling is deprecated but retained in MCP
 2026-07-28; Portico does not add support for older protocol versions.
 See the separate `summarize_text` example and its Python sampling callback.
+
+## Tool behavior hints
+
+Add optional boolean hints to the tool declaration:
+
+```elixir
+use Portico.Tool,
+  input_schema: %{type: "object", additionalProperties: false},
+  annotations: [read_only: true, open_world: false]
+```
+
+| Elixir key | MCP annotation | Meaning when true |
+| --- | --- | --- |
+| `read_only` | `readOnlyHint` | Does not modify its environment |
+| `destructive` | `destructiveHint` | May perform destructive updates |
+| `idempotent` | `idempotentHint` | Repeating identical arguments has no additional effect |
+| `open_world` | `openWorldHint` | May interact with external entities |
+
+Destructive/idempotent hints apply to tools that modify their environment.
+These hints describe behavior; they do not enforce permissions or change callback
+execution. Clients must treat annotations from untrusted servers as untrusted.
+Only supplied hints appear in `tools/list`; `annotations: []` omits the field.
+MCP defaults for omitted hints are respectively false, true, false and true.
+Unknown keys, duplicate keys and non-boolean values fail compilation.
+`Portico.Server.tools/1` exposes supplied hints in an atom-keyed annotations map.

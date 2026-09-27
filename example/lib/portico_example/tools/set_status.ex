@@ -1,6 +1,7 @@
 defmodule PorticoExample.Tools.SetStatus do
   use Portico.Tool,
     description: "Change the demo status and notify resource subscribers.",
+    annotations: [read_only: false, destructive: true, idempotent: false, open_world: false],
     input_schema: %{
       type: "object",
       properties: %{text: %{type: "string", minLength: 1}},

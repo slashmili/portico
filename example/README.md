@@ -1227,3 +1227,25 @@ does not restrict output schemas to objects.
 the Python SDK's MCP 2026-07-28 wire models. It first reproduced the bug before
 the compiler fix, and now verifies early rejection plus valid object/composition
 schemas. It runs with the normal Python E2E suite, alongside the HTTP tests.
+
+## Tool behavior hints
+
+The `add` tool declares `annotations: [read_only: true, open_world: false]`.
+In `tools/list` this becomes:
+
+```json
+{"annotations": {"readOnlyHint": true, "openWorldHint": false}}
+```
+
+`set_status` declares all four hints:
+
+```elixir
+annotations: [read_only: false, destructive: true, idempotent: false, open_world: false]
+```
+
+It replaces the old status and broadcasts on every invocation, so repeated calls
+can produce additional notifications. These are descriptive hints and do not
+change execution or authorization. Other example tools omit annotations; no
+implicit values are added to their listings. In Inspector, list tools and inspect
+the returned metadata. Python E2E verifies exact supplied fields (including false
+values), omission on other tools, and normal invocation of an annotated tool.

@@ -406,6 +406,23 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(discovery.cache_scope, "private")
                 self.assertEqual(discovery.ttl_ms, 0)
 
+    async def test_tool_behavior_hints(self):
+        async with asyncio.timeout(15):
+            async with Client(URL, read_timeout_seconds=10) as client:
+                listing = await client.list_tools()
+                tools = {tool.name: tool for tool in listing.tools}
+                # exclude_unset distinguishes omitted hints from SDK defaults.
+                self.assertEqual(tools["add"].annotations.model_dump(by_alias=True, exclude_unset=True), {
+                    "readOnlyHint": True, "openWorldHint": False,
+                })
+                self.assertEqual(tools["set_status"].annotations.model_dump(by_alias=True, exclude_unset=True), {
+                    "readOnlyHint": False, "destructiveHint": True,
+                    "idempotentHint": False, "openWorldHint": False,
+                })
+                self.assertIsNone(tools["greet"].annotations)
+                result = await client.call_tool("add", {"a": 2, "b": 3})
+                self.assertEqual(result.content[0].text, "5")
+
     async def test_tool_listing(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

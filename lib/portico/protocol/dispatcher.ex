@@ -387,6 +387,26 @@ defmodule Portico.Protocol.Dispatcher do
     metadata = %{"name" => tool.name, "inputSchema" => tool.input_schema}
 
     metadata =
+      case Map.fetch(tool, :annotations) do
+        :error ->
+          metadata
+
+        {:ok, annotations} ->
+          names = %{
+            read_only: "readOnlyHint",
+            destructive: "destructiveHint",
+            idempotent: "idempotentHint",
+            open_world: "openWorldHint"
+          }
+
+          Map.put(
+            metadata,
+            "annotations",
+            Map.new(annotations, fn {key, value} -> {names[key], value} end)
+          )
+      end
+
+    metadata =
       if Map.has_key?(tool, :output_schema),
         do: Map.put(metadata, "outputSchema", tool.output_schema),
         else: metadata

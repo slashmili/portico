@@ -42,6 +42,22 @@ defmodule Portico.Tool do
   references fail compilation. `format` and content keywords remain annotations,
   not assertions about string values or encoded content.
 
+  Optional `:annotations` is a keyword list of boolean behavior hints:
+
+      annotations: [read_only: true, open_world: false]
+
+  `:read_only` maps to MCP `readOnlyHint` (no environment modification),
+  `:destructive` to `destructiveHint` (may perform destructive updates),
+  `:idempotent` to `idempotentHint` (identical repeated calls have no additional
+  effect), and `:open_world` to `openWorldHint` (may interact with external entities).
+  Destructive and idempotent hints are meaningful for non-read-only tools.
+  Unknown keys, duplicates and non-booleans fail compilation. An empty list or
+  omitted option emits no annotations; unspecified hints are never filled in.
+  MCP's interpretation defaults are false, true, false and true respectively.
+  These are descriptive hints, not permissions or execution guarantees; clients
+  should not trust hints from untrusted servers. Portico does not change tool
+  execution based on them. This API covers the four behavior hints, not titles.
+
   Every tool must implement a public `call/2` callback. Use
   `Portico.Test.call_tool/4` to invoke it through the dispatcher, which checks
   the callback's return shape. Protocol calls also validate envelopes and core

@@ -36,7 +36,7 @@ defmodule Portico.Server.Compiler do
   def tool_metadata!(options, env) do
     options!(
       options,
-      [:description, :input_schema, :output_schema, :elicitation_verifier],
+      [:description, :input_schema, :output_schema, :elicitation_verifier, :annotations],
       "tool",
       env
     )
@@ -60,6 +60,29 @@ defmodule Portico.Server.Compiler do
     end
 
     definition = %{input_schema: schema, validator: validator, elicitation_verifier: verifier}
+
+    definition =
+      case Keyword.fetch(options, :annotations) do
+        :error ->
+          definition
+
+        {:ok, annotations} ->
+          options!(
+            annotations,
+            [:read_only, :destructive, :idempotent, :open_world],
+            "annotation",
+            env
+          )
+
+          for {key, value} <- annotations do
+            unless is_boolean(value),
+              do: error!(env, "expected annotation #{inspect(key)} to be a boolean")
+          end
+
+          if annotations == [],
+            do: definition,
+            else: Map.put(definition, :annotations, Map.new(annotations))
+      end
 
     definition =
       case Keyword.fetch(options, :output_schema) do

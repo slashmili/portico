@@ -1,6 +1,7 @@
 defmodule PorticoExample.Tools.Add do
   use Portico.Tool,
     description: "Add two integers.",
+    annotations: [read_only: true, open_world: false],
     input_schema: %{
       type: "object",
       properties: %{a: %{type: "integer"}, b: %{type: "integer"}},
