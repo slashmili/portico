@@ -12,6 +12,9 @@ defmodule Portico.PromptTest do
       if observer = request.assigns[:observer], do: send(observer, {:called, arguments, request})
 
       case request.assigns[:mode] do
+        {:messages, messages} ->
+          {:ok, %Prompt{messages: messages}}
+
         :error ->
           {:error, :unavailable}
 
@@ -74,6 +77,90 @@ defmodule Portico.PromptTest do
     assert context.assigns.locale == "en"
     assert {:ok, _} = Test.get_prompt(Catalog, "review", %{"code" => "", "language" => "en"})
     refute_received {:called, _, _}
+  end
+
+  test "text helpers append ordered user and assistant messages without mutating the original" do
+    {:ok, initial} = Prompt.text("Question")
+    {:ok, answer} = Prompt.text(initial, "Answer", role: :assistant)
+    {:ok, final} = Prompt.text(answer, "Follow-up")
+
+    assert Enum.map(final.messages, &{&1.role, &1.content.text}) ==
+             [{"user", "Question"}, {"assistant", "Answer"}, {"user", "Follow-up"}]
+
+    assert length(initial.messages) == 1
+
+    assert {:ok, %Prompt{messages: [%{role: "assistant"}]}} =
+             Prompt.text("Answer", role: :assistant)
+
+    assert {:ok, ^initial} = Prompt.text(%Prompt{}, "Question", role: :user)
+    assert {:ok, %Prompt{messages: [%{content: %{text: ""}}]}} = Prompt.text("", [])
+
+    {:reply, reply} =
+      Dispatcher.dispatch(
+        Catalog,
+        message("prompts/get", %{"name" => "review", "arguments" => %{"code" => "x"}}),
+        %{mode: {:messages, final.messages}}
+      )
+
+    assert reply["result"]["messages"] ==
+             Enum.map(final.messages, fn message ->
+               %{
+                 "role" => message.role,
+                 "content" => %{"type" => "text", "text" => message.content.text}
+               }
+             end)
+
+    assert {:ok, ^final} =
+             Test.get_prompt(Catalog, "review", %{"code" => "x"},
+               assigns: %{mode: {:messages, final.messages}}
+             )
+  end
+
+  test "text helpers return error tuples for invalid text, options, roles and builders" do
+    {:ok, prompt} = Prompt.text("first")
+
+    for value <- [nil, 5, <<255>>] do
+      assert {:error, :invalid_text} = Prompt.text(prompt, value)
+    end
+
+    for options <- [nil, %{}, [:role], [unknown: true], [role: :user, role: :assistant]] do
+      assert {:error, :invalid_options} = Prompt.text("text", options)
+      assert {:error, :invalid_options} = Prompt.text(prompt, "text", options)
+    end
+
+    for role <- [:system, "user", nil, 3] do
+      assert {:error, :invalid_role} = Prompt.text(prompt, "text", role: role)
+    end
+
+    assert {:error, :invalid_prompt} = Prompt.text(nil, "text", [])
+    assert {:error, :invalid_prompt} = Prompt.text(%Prompt{messages: nil}, "text")
+  end
+
+  test "all messages are validated, including forged structs and malformed lists" do
+    valid = %{role: "user", content: %{type: "text", text: "first"}}
+
+    invalid = [
+      %{},
+      %{role: "system", content: %{type: "text", text: "x"}},
+      %{role: :user, content: %{type: "text", text: "x"}},
+      %{role: "assistant", content: %{type: "image", data: "x"}},
+      %{role: "assistant", content: %{type: "text", text: <<255>>}},
+      %{role: "assistant", content: %{type: "text", text: nil}}
+    ]
+
+    for messages <- [nil, "bad", [], [valid | :bad]] ++ Enum.map(invalid, &[valid, &1]) do
+      assert {:error, :invalid_prompt} =
+               Test.get_prompt(Catalog, "review", %{"code" => "x"},
+                 assigns: %{mode: {:messages, messages}}
+               )
+
+      assert {:reply, %{"error" => %{"code" => -32603}}} =
+               Dispatcher.dispatch(
+                 Catalog,
+                 message("prompts/get", %{"name" => "review", "arguments" => %{"code" => "x"}}),
+                 %{mode: {:messages, messages}}
+               )
+    end
   end
 
   test "sorted listing advertises prompt arguments and capability only when declared" do

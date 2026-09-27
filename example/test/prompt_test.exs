@@ -5,10 +5,12 @@ defmodule PorticoExample.PromptTest do
     {:ok, prompt} = get_prompt mcp, "review_code", %{"code" => "1 + 1"}
 
     assert prompt.messages == [
+             %{role: "user", content: %{type: "text", text: "Review this code for bugs."}},
              %{
-               role: "user",
-               content: %{type: "text", text: "Review this code for bugs:\n\n1 + 1"}
-             }
+               role: "assistant",
+               content: %{type: "text", text: "I'll check correctness and edge cases."}
+             },
+             %{role: "user", content: %{type: "text", text: "1 + 1"}}
            ]
 
     assert {:error, :invalid_params} = get_prompt(mcp, "review_code", %{})

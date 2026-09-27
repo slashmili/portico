@@ -4,6 +4,9 @@
 
 Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
 
+- Ordered multi-message text prompts with user/assistant roles and tuple-returning
+  constructors and append helpers.
+
 - Optional OAuth resource-server Plug with public discovery metadata, Bearer
   challenges, application-supplied token verification and authenticated assigns.
 

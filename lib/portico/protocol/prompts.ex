@@ -48,22 +48,18 @@ defmodule Portico.Protocol.Prompts do
 
   defp invoke(module, arguments, request) do
     case module.get(arguments, request) do
-      {:ok, %Prompt{messages: [%{role: "user", content: %{type: "text", text: text}}]}} ->
-        case Prompt.text(text) do
-          {:ok, result} ->
-            {:ok, result,
-             %{
-               "messages" => [
-                 %{"role" => "user", "content" => %{"type" => "text", "text" => text}}
-               ]
-             }}
+      {:ok, %Prompt{} = prompt} ->
+        with {:ok, result} <- Prompt.validate(prompt) do
+          messages =
+            Enum.map(result.messages, fn message ->
+              %{
+                "role" => message.role,
+                "content" => %{"type" => "text", "text" => message.content.text}
+              }
+            end)
 
-          _ ->
-            {:error, :invalid_prompt}
+          {:ok, result, %{"messages" => messages}}
         end
-
-      {:ok, %Prompt{}} ->
-        {:error, :invalid_prompt}
 
       {:error, reason} ->
         {:callback_error, reason}

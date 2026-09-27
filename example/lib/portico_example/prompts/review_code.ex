@@ -5,7 +5,12 @@ defmodule PorticoExample.Prompts.ReviewCode do
 
   @impl true
   def get(%{"code" => code}, _request) do
-    {:ok, prompt} = Portico.Prompt.text("Review this code for bugs:\n\n#{code}")
+    {:ok, prompt} = Portico.Prompt.text("Review this code for bugs.")
+
+    {:ok, prompt} =
+      Portico.Prompt.text(prompt, "I'll check correctness and edge cases.", role: :assistant)
+
+    {:ok, prompt} = Portico.Prompt.text(prompt, code)
     {:ok, prompt}
   end
 end

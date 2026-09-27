@@ -1010,7 +1010,8 @@ is separate from declining or cancelling the URL prompt in the MCP client.
 
 ## Prompts
 
-The `review_code` prompt prepares a user message for a code review. It does not
+The `review_code` prompt prepares three ordered text messages for a code review:
+a user instruction, a canned assistant response, and the user-supplied code. It does not
 execute the supplied code or call an LLM. In Inspector, open **Prompts**, list
 prompts, select **review_code**, enter `1 + 1` for **code**, and get the prompt.
 
@@ -1029,7 +1030,9 @@ defmodule PorticoExample.Prompts.ReviewCode do
     arguments: [code: [description: "Code to review", required: true]]
 
   def get(%{"code" => code}, _request) do
-    {:ok, prompt} = Portico.Prompt.text("Review this code for bugs:\n\n#{code}")
+    {:ok, prompt} = Portico.Prompt.text("Review this code for bugs.")
+    {:ok, prompt} = Portico.Prompt.text(prompt, "I'll check correctness and edge cases.", role: :assistant)
+    {:ok, prompt} = Portico.Prompt.text(prompt, code)
     {:ok, prompt}
   end
 end
@@ -1048,7 +1051,9 @@ the static catalog is not filtered by identity.
 ```elixir
 {:ok, prompt} = get_prompt mcp, "review_code", %{"code" => "1 + 1"}
 assert prompt.messages == [
-  %{role: "user", content: %{type: "text", text: "Review this code for bugs:\n\n1 + 1"}}
+  %{role: "user", content: %{type: "text", text: "Review this code for bugs."}},
+  %{role: "assistant", content: %{type: "text", text: "I'll check correctness and edge cases."}},
+  %{role: "user", content: %{type: "text", text: "1 + 1"}}
 ]
 ```
 
@@ -1061,8 +1066,13 @@ return `{:error, :invalid_prompt}`. Invalid declarations fail at compilation.
 
 `prompts/list` is sorted by name and uses private caching with zero TTL. Cursors
 are rejected in this slice. `Prompt.text/1` creates one user-role text message.
-Multiple/rich messages, prompt elicitation and subscriptions remain
-follow-ups. Include `import_deps: [:portico]` in your formatter configuration to
+`Prompt.text(prompt, text)` appends a user message; pass `role: :assistant` as a
+third argument to append an assistant message. `Prompt.text(text, role: :assistant)`
+starts an assistant message. Messages preserve insertion order. Invalid roles
+return `{:error, :invalid_role}`; unknown/duplicate options return
+`{:error, :invalid_options}`. The Python E2E test checks all three wire messages,
+including their roles and text. Rich messages, prompt elicitation and subscriptions
+remain follow-ups. Include `import_deps: [:portico]` in your formatter configuration to
 keep `prompt` and `get_prompt` calls without parentheses.
 
 

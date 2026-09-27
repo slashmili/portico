@@ -1,6 +1,6 @@
 defmodule Portico.Prompt do
   @moduledoc ~S"""
-  Declares a prompt and builds a single user-role text message.
+  Declares a prompt and builds ordered user/assistant text messages.
 
       defmodule MyApp.Prompts.ReviewCode do
         use Portico.Prompt,
@@ -26,12 +26,12 @@ defmodule Portico.Prompt do
 
   Return `{:ok, prompt}` or `{:error, reason}`. Helpers preserve callback failures
   and expose application exceptions; HTTP sanitizes them as internal errors.
-  This slice supports one user-role text message, static listing and get.
+  Text messages support `:user` (default) and `:assistant` roles.
   Implement optional `complete/3` to suggest declared argument values. It receives
   the argument name, current value and request with previously resolved
   `request.arguments`. Return `{:ok, values}` in relevance order or an error tuple.
   Suggestions do not constrain the values accepted by get/2.
-  Multiple/rich messages, elicitation and subscriptions are follow-ups.
+  Rich messages, elicitation and subscriptions are follow-ups.
   """
   defstruct messages: []
   @type t :: %__MODULE__{messages: [map()]}
@@ -48,15 +48,94 @@ defmodule Portico.Prompt do
               {:ok, [String.t()]} | {:error, term()}
   @optional_callbacks complete: 3
 
+  @type text_error :: :invalid_text | :invalid_options | :invalid_role | :invalid_prompt
+
   @doc "Builds one user-role text message, returning an error tuple for invalid text."
   @spec text(String.t()) :: {:ok, t()} | {:error, :invalid_text}
-  def text(value) when is_binary(value) do
-    if String.valid?(value),
-      do: {:ok, %__MODULE__{messages: [%{role: "user", content: %{type: "text", text: value}}]}},
-      else: {:error, :invalid_text}
+  def text(value), do: text(%__MODULE__{}, value, [])
+
+  @doc """
+  Builds a text message with options, or appends a user message to a prompt.
+
+      {:ok, prompt} = Portico.Prompt.text("Review this code.")
+      {:ok, prompt} = Portico.Prompt.text(prompt, "1 + 1")
+
+  For a new assistant message, use `text("Example answer", role: :assistant)`.
+  Only `:role` is accepted, with `:user` (default) or `:assistant`. Unknown or
+  duplicate options return `{:error, :invalid_options}`; invalid roles return
+  `{:error, :invalid_role}`. Text must be a UTF-8 string; empty text is allowed.
+  """
+  @spec text(t(), String.t()) :: {:ok, t()} | {:error, text_error()}
+  @spec text(String.t(), keyword()) :: {:ok, t()} | {:error, text_error()}
+  def text(%__MODULE__{} = prompt, value), do: text(prompt, value, [])
+  def text(value, options), do: text(%__MODULE__{}, value, options)
+
+  @doc """
+  Appends a text message, preserving message order and the original prompt.
+
+      {:ok, prompt} = Portico.Prompt.text("What is 1 + 1?")
+      {:ok, prompt} = Portico.Prompt.text(prompt, "2", role: :assistant)
+      {:ok, prompt} = Portico.Prompt.text(prompt, "Now explain why.")
+
+  A fresh `%Portico.Prompt{}` can be used as the initial builder. A completed
+  prompt must have at least one message. Invalid existing messages return
+  `{:error, :invalid_prompt}`. Options follow `text/2`.
+  """
+  @spec text(t(), String.t(), keyword()) :: {:ok, t()} | {:error, text_error()}
+  def text(%__MODULE__{} = prompt, value, options) do
+    with true <- is_binary(value) and String.valid?(value),
+         {:ok, role} <- role(options),
+         {:ok, prompt} <- builder(prompt) do
+      message = %{role: Atom.to_string(role), content: %{type: "text", text: value}}
+      {:ok, %{prompt | messages: prompt.messages ++ [message]}}
+    else
+      false -> {:error, :invalid_text}
+      error -> error
+    end
   end
 
-  def text(_), do: {:error, :invalid_text}
+  def text(_, _, _), do: {:error, :invalid_prompt}
+
+  @doc false
+  def validate(%__MODULE__{messages: messages}) when is_list(messages) and messages != [] do
+    if valid_messages?(messages) do
+      {:ok,
+       %__MODULE__{
+         messages:
+           Enum.map(messages, fn message ->
+             %{role: message.role, content: %{type: "text", text: message.content.text}}
+           end)
+       }}
+    else
+      {:error, :invalid_prompt}
+    end
+  end
+
+  def validate(_), do: {:error, :invalid_prompt}
+
+  defp builder(%__MODULE__{messages: []} = prompt), do: {:ok, prompt}
+  defp builder(prompt), do: validate(prompt)
+
+  defp valid_messages?([]), do: true
+  defp valid_messages?([message | rest]), do: valid_message?(message) and valid_messages?(rest)
+  defp valid_messages?(_), do: false
+
+  defp valid_message?(%{role: role, content: %{type: "text", text: text}})
+       when role in ["user", "assistant"], do: is_binary(text) and String.valid?(text)
+
+  defp valid_message?(_), do: false
+
+  defp role(options) do
+    if is_list(options) and Keyword.keyword?(options) and
+         Keyword.keys(options) in [[], [:role]] do
+      case Keyword.get(options, :role, :user) do
+        role when role in [:user, :assistant] -> {:ok, role}
+        _ -> {:error, :invalid_role}
+      end
+    else
+      {:error, :invalid_options}
+    end
+  end
 
   @doc false
   defmacro __using__(options) do

@@ -139,7 +139,20 @@ or request form/URL elicitation and resume through `handle_input/3`. See
 Prompts support listing and retrieval with validated string arguments. Define a
 `Portico.Prompt` module, route it with `prompt "review_code", MyApp.Prompts.ReviewCode`,
 and test it with `get_prompt mcp, "review_code", %{"code" => "1 + 1"}`.
-The first slice returns one user-role text message; it does not call an LLM.
+Prompts return ordered text messages with user or assistant roles; they do not call an LLM.
+
+```elixir
+{:ok, prompt} = Portico.Prompt.text("Review this code.")
+{:ok, prompt} = Portico.Prompt.text(prompt, "I will check for bugs.", role: :assistant)
+{:ok, prompt} = Portico.Prompt.text(prompt, code)
+{:ok, prompt}
+```
+
+`text/1` starts a user message; `text(prompt, text)` appends another. Use
+`text(text, role: :assistant)` to start with an assistant message, or pass
+`role: :assistant` when appending. The default is `:user`; MCP has no system role
+for prompt messages. Invalid text, options, roles or existing messages return
+error tuples. A completed prompt must contain at least one valid message.
 
 Optional `complete/3` callbacks suggest prompt arguments and resource-template
 variables. Use `Portico.Test.complete/5` to test them.

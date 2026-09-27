@@ -286,9 +286,14 @@ class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(prompt.arguments[0].required)
                 self.assertEqual((listing.cache_scope, listing.ttl_ms), ("private", 0))
                 result = await client.get_prompt("review_code", {"code": "1 + 1"})
-                self.assertEqual(len(result.messages), 1)
+                self.assertEqual(len(result.messages), 3)
                 self.assertEqual(result.messages[0].role, "user")
-                self.assertEqual(result.messages[0].content.text, "Review this code for bugs:\n\n1 + 1")
+                self.assertEqual(
+                    [(message.role, message.content.type, message.content.text) for message in result.messages],
+                    [("user", "text", "Review this code for bugs."),
+                     ("assistant", "text", "I'll check correctness and edge cases."),
+                     ("user", "text", "1 + 1")],
+                )
                 for name, arguments in [("review_code", {}), ("missing", {}),
                                         ("review_code", {"code": "x", "extra": "y"})]:
                     with self.assertRaises(MCPError) as caught:
