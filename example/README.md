@@ -1339,7 +1339,7 @@ To check request-size boundaries and continuation round trips against an isolate
 .venv/bin/python -m unittest e2e/test_body_limits.py -v
 ```
 
-These four tests are also included in normal Python test discovery. The
+These five tests are also included in normal Python test discovery. The
 continuation test previously failed because arguments were copied into the token;
 it now verifies a compact argument digest and rejects changed retry arguments.
 
@@ -1371,3 +1371,23 @@ Before the digest fix, the same token was 800,618 bytes and its retry was
 large form definitions or application state can still exceed body limits. The
 new token envelope invalidates continuations issued before this change. Restart
 open forms/sampling flows after deploying it. No body limit was raised.
+
+### Generated continuation size limit
+
+Portico limits generated signed `requestState` tokens to **64,000 bytes** by
+default, including the form and application state plus encoding overhead. To
+change it, add this option alongside the example server's key in `config/runtime.exs`:
+
+```elixir
+config :portico, PorticoExample.MCP,
+  elicitation_key: key,
+  max_request_state_bytes: 128_000
+```
+
+Keep your existing key expression in place of `key`. Use a positive integer.
+Oversized state returns `{:error, :request_state_too_large}` through Portico's test
+helpers; HTTP reports a generic internal error before sending a form or sampling
+request. The body-limit Python fixture tests the default rejection and a larger
+per-server override. Small state and the 600 KB argument-digest regression continue
+to work. The combined arguments, token and answer must still fit your HTTP body
+limit; this setting does not guarantee that or cap construction memory.

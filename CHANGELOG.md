@@ -4,6 +4,9 @@
 
 Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
 
+- Generated continuation tokens default to a 64,000-byte limit, configurable
+  per server via `max_request_state_bytes`; oversized state returns an error tuple.
+
 - Continuation tokens bind arguments using a SHA-256 digest instead of copying
   them, preserving object-key order independence and reducing retry sizes.
   This token-format change invalidates previously issued continuations; restart

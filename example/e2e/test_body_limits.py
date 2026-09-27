@@ -112,6 +112,22 @@ class BodyLimitProbe(unittest.TestCase):
         print(f"\nBandit + repeated Plug.read_body: body={size:,} bytes -> HTTP {status}", flush=True)
         self.assertEqual((status, body), (200, str(size).encode()))
 
+    def test_generated_state_limit_default_and_override(self):
+        message = self.message("small", form=True)
+        message["params"]["arguments"]["state_size"] = 64_000
+        status, body = self.send("/mcp", self.encode(message))
+        self.assertEqual(status, 500)
+        failure = json.loads(body)
+        self.assertEqual(failure["error"], {"code": -32603, "message": "Internal error"})
+        self.assertNotIn("result", failure)
+        self.assertNotIn("requestState", failure)
+        status, body = self.send("/large-state", self.encode(message))
+        self.assertEqual(status, 200)
+        pending = json.loads(body)["result"]
+        self.assertEqual(pending["resultType"], "input_required")
+        self.assertGreater(len(pending["requestState"].encode()), 64_000)
+        self.assertLessEqual(len(pending["requestState"].encode()), 128_000)
+
     def test_accepted_form_can_be_submitted(self):
         initial = self.message("x" * 600_000, form=True)
         initial_body = self.encode(initial)

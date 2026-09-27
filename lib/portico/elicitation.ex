@@ -6,6 +6,17 @@ defmodule Portico.Elicitation do
 
       config :portico, MyApp.MCP, elicitation_key: System.fetch_env!("ELICITATION_KEY")
 
+  Generated signed tokens are limited to 64,000 bytes by default. Override per
+  server with `max_request_state_bytes: 128_000` alongside `elicitation_key`.
+  The limit must be a positive integer; invalid runtime configuration returns
+  `{:error, :invalid_request_state_limit}`. Oversized tokens return
+  `{:error, :request_state_too_large}` before an input request is emitted.
+  This applies to form, URL and sampling continuations, including resources.
+  HTTP reports generation failures as a sanitized internal error; testing
+  helpers preserve the error tuple. The limit measures the final signed token,
+  including encoding overhead, and does not bound the entire retry body or the
+  memory used to construct it. Incoming token verification is unchanged.
+
   Continuations expire after five minutes and bind the form, URL or sampling request and application state
   to the server and either tool/arguments or resource route/requested URI. They are signed, not encrypted or
   single-use. Keep secrets out of state. Changing the key invalidates existing
@@ -41,7 +52,8 @@ defmodule Portico.Elicitation do
 
   @doc false
   def seal(%Input{} = form, state, %Request{} = request) do
-    with {:ok, key} <- key(request.server) do
+    with {:ok, key} <- key(request.server),
+         {:ok, limit} <- state_limit(request.server) do
       payload = %{
         version: 2,
         server: request.server,
@@ -53,7 +65,8 @@ defmodule Portico.Elicitation do
         state: state
       }
 
-      {:ok, Plug.Crypto.sign(key, @salt, payload, max_age: 300)}
+      token = Plug.Crypto.sign(key, @salt, payload, max_age: 300)
+      if byte_size(token) <= limit, do: {:ok, token}, else: {:error, :request_state_too_large}
     end
   rescue
     _ -> {:error, :invalid_request_state}
@@ -94,6 +107,15 @@ defmodule Portico.Elicitation do
 
   defp canonical(value) when is_list(value), do: {:array, Enum.map(value, &canonical/1)}
   defp canonical(value), do: value
+
+  defp state_limit(server) do
+    limit =
+      Application.get_env(:portico, server, []) |> Keyword.get(:max_request_state_bytes, 64_000)
+
+    if is_integer(limit) and limit > 0,
+      do: {:ok, limit},
+      else: {:error, :invalid_request_state_limit}
+  end
 
   defp key(server) do
     options = Application.get_env(:portico, server, [])

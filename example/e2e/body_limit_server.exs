@@ -5,19 +5,24 @@ defmodule PorticoExample.BodyLimitTool do
   use Portico.Tool,
     input_schema: %{
       type: "object",
-      properties: %{payload: %{type: "string"}, form: %{type: "boolean"}},
+      properties: %{
+        payload: %{type: "string"},
+        form: %{type: "boolean"},
+        state_size: %{type: "integer", minimum: 0, maximum: 100_000}
+      },
       required: ["payload"],
       additionalProperties: false
     }
 
   @impl true
-  def call(%{"form" => true}, _) do
+  def call(%{"form" => true} = args, _) do
     {:ok, form} =
       Portico.Input.form("Continue?",
         schema: %{type: "object", properties: %{yes: %{type: "boolean"}}, required: ["yes"]}
       )
 
-    {:ok, form, "size-probe"}
+    {:ok, form,
+     if(args["state_size"], do: String.duplicate("x", args["state_size"]), else: "size-probe")}
   end
 
   def call(%{"payload" => payload}, _) do
@@ -37,11 +42,20 @@ defmodule PorticoExample.BodyLimitMCP do
   tool "probe", PorticoExample.BodyLimitTool
 end
 
+defmodule PorticoExample.LargeStateMCP do
+  use Portico.Server, name: "large-state-probe", version: "1"
+  tool "probe", PorticoExample.BodyLimitTool
+end
+
 defmodule PorticoExample.BodyLimitRouter do
   import Plug.Conn
   def init(opts), do: opts
   def call(%{request_path: "/health"} = conn, _), do: send_resp(conn, 200, "alive")
   def call(%{request_path: "/raw"} = conn, _), do: drain(conn, 0)
+
+  def call(%{request_path: "/large-state"} = conn, _) do
+    Portico.Plug.call(conn, Portico.Plug.init(server: PorticoExample.LargeStateMCP))
+  end
 
   def call(%{request_path: "/parsed"} = conn, _) do
     conn = Plug.Parsers.call(conn, Plug.Parsers.init(parsers: [:json], json_decoder: JSON))
@@ -70,6 +84,11 @@ end
 
 Application.put_env(:portico, PorticoExample.BodyLimitMCP,
   elicitation_key: Base.encode64(:crypto.strong_rand_bytes(32))
+)
+
+Application.put_env(:portico, PorticoExample.LargeStateMCP,
+  elicitation_key: Base.encode64(:crypto.strong_rand_bytes(32)),
+  max_request_state_bytes: 128_000
 )
 
 {:ok, listener} =

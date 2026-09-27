@@ -343,3 +343,20 @@ to values or array order do. This reduces retry overhead while keeping Portico
 stateless. Large form definitions, application state and client answers can still
 exceed the configured HTTP body limit. The argument-digest envelope invalidates
 older tokens; restart open input flows after deploying this change.
+
+Generated `requestState` tokens default to a **64,000-byte** limit. Override it
+per server with a positive integer:
+
+```elixir
+config :portico, MyApp.MCP,
+  elicitation_key: key,
+  max_request_state_bytes: 128_000
+```
+
+The limit measures the final signed token, including encoding overhead, across
+form, URL and sampling continuations. Generation returns
+`{:error, :request_state_too_large}` when exceeded; testing helpers preserve that
+reason, while HTTP returns a sanitized internal error without emitting an input
+request. Invalid limit configuration returns `{:error, :invalid_request_state_limit}`.
+This bounds generated tokens, not construction memory, incoming token verification
+or the entire retry body. Lowering it does not invalidate previously issued tokens.
