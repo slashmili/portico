@@ -1,6 +1,6 @@
-"""Opt-in HTTP size probe; continuation regression intentionally fails.
+"""HTTP size probe and compact continuation regression.
 
-Run: .venv/bin/python e2e/probe_body_limits.py -v
+Run: .venv/bin/python e2e/test_body_limits.py -v
 Owns a loopback Bandit server. At most 16 MiB/request. Never prints tokens.
 """
 import copy
@@ -120,19 +120,26 @@ class BodyLimitProbe(unittest.TestCase):
         pending = json.loads(body)["result"]
         token = pending["requestState"]
         retry = copy.deepcopy(initial)
+        retry["id"] = 2
         retry["params"].update(requestState=token, inputResponses={
             "form": {"action": "accept", "content": {"yes": True}}})
         retry_body = self.encode(retry)
-        retry_status, _ = self.send("/mcp", retry_body)
+        retry_status, retry_response = self.send("/mcp", retry_body)
         larger_status, larger_body = self.send("/larger", retry_body)
         print(f"\nContinuation: initial={len(initial_body):,} bytes -> HTTP {status}; "
               f"token={len(token.encode()):,} bytes; retry={len(retry_body):,} bytes "
               f"-> HTTP {retry_status}; same retry with 4 MB limit -> HTTP {larger_status}", flush=True)
         self.assertEqual(larger_status, 200)
         self.assertEqual(json.loads(larger_body)["result"]["content"][0]["text"], "Resumed")
-        # Intentionally red: valid input creates an unusable continuation.
-        self.assertEqual(retry_status, 200,
-                         "Accepted form cannot resume: generated continuation exceeds the endpoint body limit")
+        self.assertLess(len(token.encode()), 2_000)
+        self.assertLess(len(retry_body), 1_000_000)
+        self.assertEqual(retry_status, 200)
+        self.assertEqual(json.loads(retry_response)["result"]["content"][0]["text"], "Resumed")
+        retry["id"] = 3
+        retry["params"]["arguments"]["payload"] = "y" * 600_000
+        changed_status, changed_body = self.send("/mcp", self.encode(retry))
+        self.assertEqual(changed_status, 400)
+        self.assertEqual(json.loads(changed_body)["error"]["code"], -32602)
 
 
 if __name__ == "__main__":

@@ -335,3 +335,11 @@ Only supplied hints appear in `tools/list`; `annotations: []` omits the field.
 MCP defaults for omitted hints are respectively false, true, false and true.
 Unknown keys, duplicate keys and non-boolean values fail compilation.
 `Portico.Server.tools/1` exposes supplied hints in an atom-keyed annotations map.
+
+
+Continuation tokens bind the resent arguments using a SHA-256 digest instead of
+embedding a second copy. Object-key order does not affect verification; changes
+to values or array order do. This reduces retry overhead while keeping Portico
+stateless. Large form definitions, application state and client answers can still
+exceed the configured HTTP body limit. The argument-digest envelope invalidates
+older tokens; restart open input flows after deploying this change.

@@ -4,6 +4,11 @@
 
 Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
 
+- Continuation tokens bind arguments using a SHA-256 digest instead of copying
+  them, preserving object-key order independence and reducing retry sizes.
+  This token-format change invalidates previously issued continuations; restart
+  open input flows after upgrading. HTTP body limits remain unchanged.
+
 - Ordered multi-message text prompts with user/assistant roles and tuple-returning
   constructors and append helpers.
 

@@ -1331,18 +1331,17 @@ Python E2E tests cover public metadata, HTTP challenges and a real Python MCP SD
 call proving that verified assigns reach `whoami`. They do not exercise an
 external provider's authorization-code or refresh flow.
 
-## Opt-in request-size diagnostic
+## Request-size regression tests
 
-To reproduce the continuation-size failure against an isolated local Bandit server:
+To check request-size boundaries and continuation round trips against an isolated local Bandit server:
 
 ```sh
-.venv/bin/python -m unittest e2e/probe_body_limits.py -v
+.venv/bin/python -m unittest e2e/test_body_limits.py -v
 ```
 
-This probe **currently exits with one failing test intentionally**: an accepted
-form request generates a continuation whose retry exceeds the same endpoint's
-body limit. It is named `probe_body_limits.py` so the normal `test_*.py` discovery
-suite does not include this diagnostic. No library behavior is changed by it.
+These four tests are also included in normal Python test discovery. The
+continuation test previously failed because arguments were copied into the token;
+it now verifies a compact argument digest and rejects changed retry arguments.
 
 The fixture `e2e/body_limit_server.exs` uses a random loopback port and is stopped
 by the Python test. It sends at most 16 MiB per request, prints only sizes/statuses,
@@ -1355,7 +1354,7 @@ Observed with Plug 1.20.3 / Bandit 1.12.5, HTTP/1.1 and Content-Length:
 | Portico raw body, default limit | 1,000,000 bytes accepted; 1,000,001 rejected with 413 |
 | Plug.Parsers JSON, default limit before Portico | 8,000,000 accepted; 8,000,001 and 8,100,000 rejected with 413 |
 | Bandit with repeated Plug.read_body calls | 16,777,216 bytes consumed successfully |
-| Form continuation | Initial 600,249 bytes accepted; token 800,618 bytes; retry 1,400,954 bytes rejected with 413 |
+| Form continuation with argument digest | Initial 600,249 bytes accepted; token 627 bytes; retry 600,963 bytes accepted |
 | Same continuation, fixture's 4,000,000-byte Portico limit | Accepted and returns `Resumed` |
 
 Some oversized parser requests received HTTP 413 followed by a connection reset;
@@ -1365,4 +1364,10 @@ raw bytes. With upstream Plug.Parsers, that parser owns the body limit instead.
 The raw-reader test shows that Bandit can serve a body beyond the parser limit;
 16 MiB is the largest tested size, not a discovered Bandit maximum. This is not
 an HTTP/2, proxy, chunked-transfer or memory-exhaustion test. The server stayed alive:
-the reproduced failure is an unusable continuation, not a crashed Elixir VM.
+the original failure was an unusable continuation, not a crashed Elixir VM.
+
+Before the digest fix, the same token was 800,618 bytes and its retry was
+1,400,954 bytes, rejected with 413. Token sizes here describe this exact fixture;
+large form definitions or application state can still exceed body limits. The
+new token envelope invalidates continuations issued before this change. Restart
+open forms/sampling flows after deploying it. No body limit was raised.

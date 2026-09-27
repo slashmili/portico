@@ -214,24 +214,16 @@ defmodule Portico.ResourceElicitationTest do
   end
 
   test "tampered, expired and old-key tokens fail before custom verification", %{mcp: mcp} do
-    {:ok, form, token} = Test.read_resource(mcp, "company://custom")
+    {:ok, _form, token} = Test.read_resource(mcp, "company://custom")
     assert_received {:read, request}
+    {:ok, payload} = Portico.Elicitation.open(token, request)
     refute_received :verified
 
     expired =
       Plug.Crypto.sign(
         String.duplicate("k", 32),
         "portico:elicitation:v1",
-        %{
-          version: 1,
-          server: Server,
-          tool: nil,
-          arguments: nil,
-          resource_route: request.resource_route,
-          resource_uri: request.resource_uri,
-          form: form,
-          state: "state"
-        },
+        payload,
         signed_at: System.os_time(:second) - 600
       )
 

@@ -314,15 +314,62 @@ defmodule Portico.ElicitationTest do
     refute_received :verified
   end
 
+  test "argument digests ignore object order, preserve arrays/types and keep tokens compact" do
+    {:ok, form} =
+      Input.form("Continue?", schema: %{type: "object", properties: %{yes: %{type: "boolean"}}})
+
+    original = %{"nested" => %{"b" => 2, "a" => 1}, "items" => [1, "two", true, nil]}
+    request = %Request{server: Server, tool_name: "work", arguments: original}
+    {:ok, token} = Portico.Elicitation.seal(form, "state", request)
+    # Decode reordered JSON to exercise the same values in a different wire order.
+    reordered = JSON.decode!(~s({"items":[1,"two",true,null],"nested":{"a":1,"b":2}}))
+    assert {:ok, "state"} = Portico.Elicitation.verify(token, %{request | arguments: reordered})
+
+    for arguments <- [
+          Map.delete(original, "nested"),
+          %{original | "nested" => %{"a" => 1, "b" => 3}},
+          %{original | "items" => [nil, true, "two", 1]},
+          %{original | "items" => [1.0, "two", true, nil]},
+          %{original | "items" => ["1", "two", true, nil]},
+          %{original | "nested" => [["a", 1], ["b", 2]]}
+        ] do
+      assert {:error, :invalid_request_state} =
+               Portico.Elicitation.verify(token, %{request | arguments: arguments})
+    end
+
+    for size <- [1, 600_000] do
+      large_request = %{request | arguments: %{"payload" => String.duplicate("x", size)}}
+      {:ok, large_token} = Portico.Elicitation.seal(form, "state", large_request)
+      assert byte_size(large_token) < 2_000
+      {:ok, payload} = Portico.Elicitation.open(large_token, large_request)
+      refute Map.has_key?(payload, :arguments)
+      assert byte_size(payload.arguments_digest) == 32
+      assert {:ok, "state"} = Portico.Elicitation.verify(large_token, large_request)
+    end
+
+    old_payload = %{
+      version: 1,
+      server: Server,
+      tool: "work",
+      arguments: original,
+      form: form,
+      state: "state"
+    }
+
+    old_token = Plug.Crypto.sign(String.duplicate("k", 32), "portico:elicitation:v1", old_payload)
+    assert {:error, :invalid_request_state} = Portico.Elicitation.verify(old_token, request)
+  end
+
   test "expiry, missing configuration and malformed state fail closed", %{mcp: mcp} do
-    {:ok, form, _} = Portico.Test.call_tool(mcp, "work", %{})
+    {:ok, form, token} = Portico.Test.call_tool(mcp, "work", %{})
     request = %Request{server: Server, tool_name: "work", arguments: %{}}
+    {:ok, payload} = Portico.Elicitation.open(token, request)
 
     expired =
       Plug.Crypto.sign(
         String.duplicate("k", 32),
         "portico:elicitation:v1",
-        %{version: 1, server: Server, tool: "work", arguments: %{}, form: form, state: "old"},
+        payload,
         signed_at: System.os_time(:second) - 600
       )
 
