@@ -147,8 +147,46 @@ variables. Use `Portico.Test.complete/5` to test them.
 Only MCP **2026-07-28** is implemented. Catalog-change subscriptions, stdio,
 and legacy protocol versions are outside the current scope.
 Custom `x-mcp-header` annotations are rejected at compilation; omit them from tool input schemas.
-The host application owns authentication, authorization, and rate limiting.
-Passing user assigns through Plug does not provide MCP OAuth support.
+The host application owns token verification, operation authorization, and rate limiting.
+Optional `Portico.OAuth` provides the OAuth resource-server integration described below.
+
+## Optional OAuth integration
+
+Protect an MCP endpoint with `Portico.OAuth` before `Portico.Plug`:
+
+```elixir
+plug Portico.OAuth,
+  resource: "https://example.com/mcp",
+  authorization_servers: ["https://auth.example.com"],
+  scopes: ["mcp:access"],
+  verify_token: &MyApp.Auth.verify_mcp_token/2
+
+plug Portico.Plug, server: MyApp.MCP, assigns: [:current_user]
+```
+
+Scope this pipeline to the protected MCP endpoint. Also mount a **public** GET
+route at `/.well-known/oauth-protected-resource/mcp` that calls
+`Portico.OAuth.metadata(conn, options)`, using the same options returned by
+`Portico.OAuth.init/1`. Discovery must remain outside the protected pipeline.
+The metadata URL is derived from the configured resource URL, including its path.
+
+Your verifier receives `token` and `%{resource: resource, scopes: scopes}`. Return
+`{:ok, %{current_user: user}}`, `{:error, :invalid_token}` (401),
+`{:error, :insufficient_scope}` (403), or `{:error, :temporarily_unavailable}` (503).
+It must validate authenticity, trusted issuer, expiry, resource audience and scopes
+using your provider's JWT validation or trusted token introspection/store.
+Portico invokes it on every authenticated request and forwards successful assigns.
+Invalid callback returns or callback crashes produce a generic 500 without exposing
+the token or error details. Invalid configuration fails at Plug initialization.
+
+This implements the resource-server boundary of
+[MCP authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization).
+Login, consent, client registration, token issuance and refresh belong to an
+authorization provider. JWT verification and introspection adapters are not bundled.
+The host also configures CORS where needed and each callback authorizes its operation.
+See [the example](example/README.md#optional-protected-endpoint) for runnable routing,
+a demo verifier, curl commands and Inspector instructions. The demo uses fixed tokens;
+it does not provide a browser login flow.
 
 ## Development
 

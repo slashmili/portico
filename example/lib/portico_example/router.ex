@@ -5,6 +5,27 @@ defmodule PorticoExample.Router do
   plug(:match)
   plug(:dispatch)
 
+  match "/.well-known/oauth-protected-resource/protected/mcp" do
+    Portico.OAuth.metadata(conn, PorticoExample.OAuthDemo.options())
+  end
+
+  match "/protected/mcp" do
+    conn = Portico.OAuth.call(conn, PorticoExample.OAuthDemo.options())
+
+    if conn.halted do
+      conn
+    else
+      options =
+        Portico.Plug.init(
+          server: PorticoExample.ProtectedMCP,
+          assigns: [:current_user],
+          allowed_origins: Application.fetch_env!(:portico_example, :allowed_origins)
+        )
+
+      Portico.Plug.call(conn, options)
+    end
+  end
+
   match "/mcp" do
     options =
       Portico.Plug.init(

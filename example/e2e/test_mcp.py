@@ -18,6 +18,8 @@ import urllib.error
 
 from jsonschema import Draft202012Validator
 from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+import httpx2
 from mcp.shared.exceptions import MCPError
 from mcp.types import CreateMessageResult, ErrorData, TextContent, ElicitResult, PromptReference, ResourceTemplateReference
 
@@ -74,6 +76,46 @@ def setUpModule():
 
 
 class PorticoHTTPTest(unittest.IsolatedAsyncioTestCase):
+    async def test_oauth_resource_metadata_and_challenges(self):
+        base = URL.rsplit("/", 1)[0]
+        protected = base + "/protected/mcp"
+        metadata_url = base + "/.well-known/oauth-protected-resource/protected/mcp"
+        async with httpx2.AsyncClient(timeout=10) as http:
+            response = await http.get(metadata_url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {
+                "resource": protected,
+                "authorization_servers": ["https://auth.example.com"],
+                "scopes_supported": ["mcp:access"],
+                "bearer_methods_supported": ["header"],
+            })
+            for token, status, error in [
+                (None, 401, None),
+                ("unknown", 401, "invalid_token"),
+                ("limited-demo-token", 403, "insufficient_scope"),
+                ("bad token", 400, "invalid_request"),
+            ]:
+                headers = {} if token is None else {"Authorization": "Bearer " + token}
+                response = await http.post(protected, headers=headers, json={})
+                self.assertEqual(response.status_code, status)
+                challenge = response.headers["www-authenticate"]
+                self.assertIn(f'resource_metadata="{metadata_url}"', challenge)
+                self.assertIn('scope="mcp:access"', challenge)
+                if error:
+                    self.assertIn(f'error="{error}"', challenge)
+                else:
+                    self.assertNotIn('error=', challenge)
+                self.assertEqual(response.text, "")
+                self.assertEqual(response.headers["cache-control"], "no-store")
+
+    async def test_oauth_verified_identity_reaches_tool(self):
+        protected = URL.rsplit("/", 1)[0] + "/protected/mcp"
+        async with asyncio.timeout(15):
+            async with httpx2.AsyncClient(headers={"Authorization": "Bearer alice-demo-token"}) as http:
+                async with Client(streamable_http_client(protected, http_client=http), cache=None) as client:
+                    result = await client.call_tool("whoami", {})
+                    self.assertEqual(result.content[0].text, "Authenticated as alice")
+
     async def test_unsupported_resource_subscription_is_not_acknowledged(self):
         async with asyncio.timeout(15):
             async with Client(URL, read_timeout_seconds=10) as client:

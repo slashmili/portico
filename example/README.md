@@ -1249,3 +1249,74 @@ change execution or authorization. Other example tools omit annotations; no
 implicit values are added to their listings. In Inspector, list tools and inspect
 the returned metadata. Python E2E verifies exact supplied fields (including false
 values), omission on other tools, and normal invocation of an annotated tool.
+
+## Optional protected endpoint
+
+The separate endpoint `http://127.0.0.1:4000/protected/mcp` demonstrates
+`Portico.OAuth` and has a single `whoami` tool. Start the example normally.
+
+Review these files together:
+
+- [`oauth_demo.ex`](lib/portico_example/oauth_demo.ex): configuration and a verifier
+  returning `{:ok, %{current_user: user}}` or an error tuple.
+- [`router.ex`](lib/portico_example/router.ex): public metadata route, authentication,
+  and dispatch only after authentication succeeds.
+- [`whoami.ex`](lib/portico_example/tools/whoami.ex): reads the authenticated user
+  from `request.assigns.current_user`.
+
+The demo uses two **public, fixed, local-only opaque tokens**. `alice-demo-token`
+passes; `limited-demo-token` lacks the required scope and gets 403. Unknown tokens
+get 401. Both records expire one hour after startup; restart the example to reset
+that demo expiry. The verifier also checks the resource audience. This store is
+only an illustration of the callback contract, not production authentication.
+
+The advertised `https://auth.example.com` issuer is a placeholder. This example
+has **no browser login, consent, token endpoint or refresh flow**. A real deployment
+must configure its actual authorization provider and validate that provider's
+access tokens (signature and claims for JWTs, or trusted introspection/token store
+for opaque tokens). The verifier must check authenticity, issuer, audience, expiry
+and required scopes; decoding a JWT alone does not verify it.
+
+Inspect the public metadata and the missing-token challenge:
+
+```sh
+curl -i http://127.0.0.1:4000/.well-known/oauth-protected-resource/protected/mcp
+curl -i -X POST http://127.0.0.1:4000/protected/mcp
+```
+
+Call the authenticated tool:
+
+```sh
+curl -i http://127.0.0.1:4000/protected/mcp \
+  -H 'Authorization: Bearer alice-demo-token' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Mcp-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/call' \
+  -H 'Mcp-Name: whoami' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+The text result is `Authenticated as alice`. Change the token to
+`limited-demo-token` to see `403` with `error="insufficient_scope"`, or to an unknown
+value to see `401` with `error="invalid_token"`.
+
+Try Inspector with the explicit demo header:
+
+```sh
+npx @modelcontextprotocol/inspector \
+  --server-url http://127.0.0.1:4000/protected/mcp \
+  --transport http \
+  --protocol-era modern \
+  --header "Authorization: Bearer alice-demo-token"
+```
+
+Connect, list tools and call `whoami` with `{}`. For an already-running Inspector,
+set its custom `Authorization` header to `Bearer alice-demo-token` and reconnect.
+This tests a supplied access token; don't start Inspector's automatic OAuth login
+against the placeholder issuer. As with the other examples, configure
+`ALLOWED_ORIGINS` if the client sends an Origin header.
+
+Python E2E tests cover public metadata, HTTP challenges and a real Python MCP SDK
+call proving that verified assigns reach `whoami`. They do not exercise an
+external provider's authorization-code or refresh flow.

@@ -5,6 +5,7 @@ if config_env() == :dev do
 end
 
 config :portico_example,
+  oauth_demo_expires_at: System.system_time(:second) + 3600,
   public_url: "http://127.0.0.1:" <> System.get_env("PORT", "4000"),
   start_server: config_env() != :test,
   port: String.to_integer(System.get_env("PORT", "4000")),

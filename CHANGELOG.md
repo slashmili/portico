@@ -4,6 +4,9 @@
 
 Initial development toward Portico 0.1.0, targeting MCP 2026-07-28.
 
+- Optional OAuth resource-server Plug with public discovery metadata, Bearer
+  challenges, application-supplied token verification and authenticated assigns.
+
 - Optional tool behavior annotations with compile-time validation and MCP wire names.
 - Tool input schemas require an explicit object root at compilation, matching
   the MCP declaration contract.
