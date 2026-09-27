@@ -36,6 +36,21 @@ defmodule Portico.SchemaTest do
     refute Map.has_key?(module.__portico_tool__(), :validator)
   end
 
+  test "an explicit object root preserves root composition and local references" do
+    schema = %{
+      "type" => "object",
+      "$defs" => %{"args" => %{"required" => ["name"]}},
+      "allOf" => [%{"$ref" => "#/$defs/args"}],
+      "properties" => %{"name" => %{"type" => "string"}}
+    }
+
+    module = compile_tool(schema)
+    assert module.__portico_tool__().input_schema == schema
+    assert Portico.Schema.valid?(module.__portico_validator__(), %{"name" => "Ada"})
+    refute Portico.Schema.valid?(module.__portico_validator__(), %{})
+    refute Portico.Schema.valid?(module.__portico_validator__(), %{"name" => 1})
+  end
+
   test "rejects custom header annotations at the root and nested schema locations" do
     annotation = %{"type" => "string", "x-mcp-header" => "Region"}
 

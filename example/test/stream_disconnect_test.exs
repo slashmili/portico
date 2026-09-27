@@ -3,7 +3,7 @@ defmodule PorticoExample.StreamDisconnectTest do
   @moduletag capture_log: true
 
   defmodule Silent do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(_, _), do: {:noreply, nil, :stream}
     @impl true

@@ -5,7 +5,7 @@ defmodule Portico.SamplingTest do
   alias Portico.Test.Context
 
   defmodule Tool do
-    use Portico.Tool, input_schema: %{}, elicitation_verifier: &__MODULE__.verify/2
+    use Portico.Tool, input_schema: %{type: "object"}, elicitation_verifier: &__MODULE__.verify/2
     def verify(_, _), do: {:error, :elicitation_verifier_must_not_run}
     @impl true
     def call(%{"stream" => true}, _), do: {:noreply, nil, :stream}

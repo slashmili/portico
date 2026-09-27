@@ -101,7 +101,7 @@ defmodule Portico.ServerTest do
     for {name, target, message} <- [
           {"", Add, "expected tool name to be a nonempty UTF-8 string"},
           {:add, Add, "expected tool name to be a nonempty UTF-8 string"},
-          {"add", [input_schema: %{}], "expected a Portico.Tool module"},
+          {"add", [input_schema: %{type: "object"}], "expected a Portico.Tool module"},
           {"add", String, "expected String to use Portico.Tool"},
           {"add", Portico.MissingTool, "could not compile tool module Portico.MissingTool"}
         ] do

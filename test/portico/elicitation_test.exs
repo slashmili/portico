@@ -44,7 +44,7 @@ defmodule Portico.ElicitationTest do
   end
 
   defmodule Default do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(args, request), do: Tool.call(args, request)
     @impl true
@@ -52,7 +52,7 @@ defmodule Portico.ElicitationTest do
   end
 
   defmodule Missing do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(_, request), do: Tool.call(%{}, request)
   end

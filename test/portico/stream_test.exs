@@ -74,7 +74,7 @@ defmodule Portico.StreamTest do
   end
 
   defmodule Missing do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(_, _), do: {:noreply, :data, :stream}
   end

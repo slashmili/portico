@@ -22,6 +22,11 @@ defmodule Portico.Tool do
   A tool module can be reused under different names or by multiple servers.
 
   `:input_schema` and optional `:output_schema` must be plain maps.
+  Tool input schemas must explicitly declare `type: "object"` at the root;
+  `%{}` and non-object or union root types fail compilation. For a tool with no
+  arguments, use `%{type: "object", additionalProperties: false}`. Composition
+  and local references remain supported alongside the root type. Output schemas
+  may describe any JSON type.
   `:description` is an optional UTF-8 string. Schemas are checked at compilation against Draft 2020-12 and built
   into an internal validator. Atom map keys are normalized recursively to strings;
   duplicate normalized keys and non-JSON values are rejected. Values such as

@@ -85,7 +85,7 @@ defmodule Portico.ResourceElicitationTest do
   end
 
   defmodule Tool do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     def call(_, request), do: Form.read(request)
     def handle_input(_, _, _), do: Portico.Result.text("tool")
   end

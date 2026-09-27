@@ -30,7 +30,7 @@ defmodule Portico.TestTest do
   end
 
   defmodule Broken do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
 
     @impl true
     def call(%{"return" => value}, _request), do: value

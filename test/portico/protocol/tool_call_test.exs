@@ -30,7 +30,7 @@ defmodule Portico.Protocol.ToolCallTest do
   end
 
   defmodule Broken do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(%{"raise" => true}, _), do: raise("secret application detail")
     def call(%{"shape" => true}, _), do: {:reply, "secret", %{}}

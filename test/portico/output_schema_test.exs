@@ -8,7 +8,10 @@ defmodule Portico.OutputSchemaTest do
     Code.compile_quoted(
       quote do
         defmodule unquote(module) do
-          use Portico.Tool, input_schema: %{}, output_schema: unquote(Macro.escape(schema))
+          use Portico.Tool,
+            input_schema: %{type: "object"},
+            output_schema: unquote(Macro.escape(schema))
+
           def call(_, _), do: Portico.Result.structured(nil)
         end
       end

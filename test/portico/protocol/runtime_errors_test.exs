@@ -7,7 +7,7 @@ defmodule Portico.Protocol.RuntimeErrorsTest do
   alias Portico.Stream.Runner
 
   defmodule Tool do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(%{"reply" => reply}, _), do: reply
     @impl true
@@ -20,7 +20,7 @@ defmodule Portico.Protocol.RuntimeErrorsTest do
   end
 
   defmodule Missing do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(_, _), do: {:noreply, "private", :stream}
   end

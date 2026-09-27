@@ -48,6 +48,11 @@ defmodule Portico.Server.Compiler do
     end
 
     {schema, validator} = Portico.Schema.build!(schema, env)
+
+    unless schema["type"] == "object" do
+      error!(env, ~s(input_schema must declare type: "object" at the root))
+    end
+
     verifier = Keyword.get(options, :elicitation_verifier, &Portico.Elicitation.verify/2)
 
     unless is_function(verifier, 2) and Function.info(verifier, :type) == {:type, :external} do

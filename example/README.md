@@ -1212,3 +1212,18 @@ supported in the selected MCP revision despite its deprecation.
 Python E2E covers the complete request/retry flow, missing capability and client
 refusal. Elixir tests additionally cover malformed answers, tampering, expired
 state, binding to tool arguments, and sampling from streaming callbacks.
+
+## Tool input-schema contract
+
+Every tool's `input_schema` must explicitly declare `type: "object"` at its root.
+Use `%{type: "object", additionalProperties: false}` for no arguments, or
+`%{type: "object"}` to accept arbitrary object fields. An empty schema `%{}`, a
+root array/string type or a root type union fails at compilation. Composition and
+local references remain supported alongside the explicit object root. This rule
+does not restrict output schemas to objects.
+
+`e2e/test_schema_contract.py` compiles isolated declarations using
+`e2e/schema_probe.exs`, then validates actual dispatcher `tools/list` results with
+the Python SDK's MCP 2026-07-28 wire models. It first reproduced the bug before
+the compiler fix, and now verifies early rejection plus valid object/composition
+schemas. It runs with the normal Python E2E suite, alongside the HTTP tests.

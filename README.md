@@ -12,7 +12,12 @@ development:
 {:portico, git: "https://github.com/slashmili/portico.git"}
 ```
 
-Run `mix deps.get`. Define a tool with its raw JSON Schema and callback:
+Run `mix deps.get`. Define a tool with its raw JSON Schema and callback.
+Input schemas must explicitly declare `type: "object"` at the root. For a tool
+with no arguments, use `%{type: "object", additionalProperties: false}`.
+Missing or non-object roots fail compilation; output schemas may describe any
+JSON type.
+
 
 ```elixir
 defmodule MyApp.Tools.Add do

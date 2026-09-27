@@ -38,7 +38,7 @@ defmodule Portico.StreamElicitationTest do
   end
 
   defmodule Missing do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     defdelegate call(args, request), to: Tool
     @impl true

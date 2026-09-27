@@ -6,7 +6,7 @@ defmodule Portico.Protocol.EncodingTest do
   alias Portico.Protocol.Encoder
 
   defmodule Tool do
-    use Portico.Tool, input_schema: %{}
+    use Portico.Tool, input_schema: %{type: "object"}
     @impl true
     def call(%{"stream" => true}, _), do: {:noreply, nil, :stream}
     def call(_, _), do: Portico.Result.text("done")
