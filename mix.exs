@@ -12,7 +12,12 @@ defmodule Portico.MixProject do
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/slashmili/portico"}
       ],
-      docs: [main: "readme", extras: ["README.md", "CHANGELOG.md"]],
+      docs: [
+        main: "overview",
+        extras: extras(),
+        extra_section: "GUIDES",
+        groups_for_extras: groups_for_extras()
+      ],
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       test_coverage: [summary: [threshold: 91]],
@@ -32,7 +37,21 @@ defmodule Portico.MixProject do
       {:plug_crypto, "~> 2.1"},
       {:jsv, "~> 0.22.0"},
       {:texture, "~> 2.0"},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
+    ]
+  end
+
+  defp extras do
+    [
+      "guides/introduction/overview.md",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  end
+
+  defp groups_for_extras do
+    [
+      Introduction: ~r/guides\/introduction\/.?/
     ]
   end
 end
